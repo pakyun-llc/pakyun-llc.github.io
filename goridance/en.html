@@ -22,6 +22,11 @@ footer { margin-top: 3em; font-size: 0.85em; color: #888; }
 <h2>Photos</h2>
 <p>The App uses the photo library for photos placed on the gorilla's face. Face cropping is performed entirely on-device, and images are never sent outside your device. Screen recording runs only when you start it yourself.</p>
 
+<h2>Face data</h2>
+<p>The App uses Apple's Vision framework (on-device face detection) to locate a face inside a photo you choose. The only thing it obtains is <strong>the coordinates of the rectangle where a face appears in that photo</strong>. It does not create, collect, or store face templates, face recognition data, biometric identifiers, or facial landmarks, and it never attempts to identify anyone.</p>
+<p>The cropped image produced from that rectangle is <strong>kept only in memory while the App is running</strong>. It is not written to device storage, never sent to any server, and never shared with third parties. It is discarded when you remove the face or quit the App. Retention lasts only for the duration of your session.</p>
+<p>Face data leaves the App only if you record a video yourself and then save or share it. In that case it goes to your own photo library and to the recipients or services you choose.</p>
+
 <h2>Microphone</h2>
 <p><strong>Microphone</strong>: In "Mic" mode, the App measures only changes in loudness on-device to detect the beat of music playing nearby and match the dance to it. No audio is recorded, stored, or transmitted.</p>
 <p><strong>Recording</strong>: Only when you start a recording, the App saves the screen and audio as a video to your photo library. Sharing happens only with the people or services you choose in the share sheet.</p>
