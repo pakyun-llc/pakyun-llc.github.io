@@ -27,6 +27,11 @@ footer { margin-top: 3em; font-size: 0.85em; color: #888; }
 <p>The cropped image produced from that rectangle is <strong>kept only in memory while the App is running</strong>. It is not written to device storage, never sent to any server, and never shared with third parties. It is discarded when you remove the face or quit the App. Retention lasts only for the duration of your session.</p>
 <p>Face data leaves the App only if you record a video yourself and then save or share it. In that case it goes to your own photo library and to the recipients or services you choose.</p>
 
+<h2>Full-Body Photos</h2>
+<p>In "Human" mode, the app uses Apple's Vision framework (on-device person segmentation) to separate the shape of a person from the background of a photo you choose. The only thing it obtains is a <strong>black-and-white mask indicating, per pixel, whether a person is present</strong>. It does not perform body-pose or joint estimation, does not identify individuals, and does not create biometric data.</p>
+<p>The background-removed image is <strong>held only in memory while the app is running</strong>. It is not written to device storage, not sent to any server, and not shared with third parties. It is discarded when you close the app or remove the photo. Retention lasts only for the duration of your session.</p>
+<p>This image leaves the app only if you yourself record a video and then save or share it.</p>
+
 <h2>Microphone</h2>
 <p><strong>Microphone</strong>: In "Mic" mode, the App measures only changes in loudness on-device to detect the beat of music playing nearby and match the dance to it. No audio is recorded, stored, or transmitted.</p>
 <p><strong>Recording</strong>: Only when you start a recording, the App saves the screen and audio as a video to your photo library. Sharing happens only with the people or services you choose in the share sheet.</p>
