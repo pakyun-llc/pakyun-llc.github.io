@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, viewport-fit=cover">
+<title>パンツパンチャー</title>
+<style>
+html, body { margin: 0; padding: 0; border: 0; overflow: hidden; background: #000; touch-action: none; }
+/* Godot の Web 書き出しは CameraServer が無いので、ブラウザのカメラ映像を <video> でゲームの裏に敷く。
+   canvas は透過(project.godot の transparent_background)。前カメラなので鏡にする */
+#cam { position: fixed; inset: 0; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); filter: brightness(0.85); z-index: 0; background: #000; }
+#canvas { position: fixed; inset: 0; display: block; z-index: 1; background: transparent; }
+#canvas:focus { outline: none; }
+#status { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; font: 20px sans-serif; z-index: 2; pointer-events: none; }
+</style>
+</head>
+<body>
+<video id="cam" autoplay playsinline muted></video>
+<canvas id="canvas">Your browser does not support the canvas tag.</canvas>
+<div id="status">よみこみ中…</div>
+<script src="index.js"></script>
+<script>
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":12514720,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_THREADS_ENABLED = false;
+const status = document.getElementById('status');
+const engine = new Engine(GODOT_CONFIG);
+engine.startGame({
+	onProgress: (cur, total) => { if (total > 0) status.textContent = 'よみこみ中… ' + Math.round(cur / total * 100) + '%'; },
+}).then(() => { status.remove(); }, (err) => { status.textContent = 'エラー: ' + err; });
+
+// 結果カードの共有。Godot から透過 PNG(base64)をもらい、カメラの絵と合成して navigator.share。
+// 共有が無いブラウザ(PC)は新しいタブで開く(長押し/右クリックで保存できる)
+window.__pantsuCard = null;
+window.pantsuShare = async (b64) => {
+	const png = new Image();
+	await new Promise((ok, ng) => { png.onload = ok; png.onerror = ng; png.src = 'data:image/png;base64,' + b64; });
+	const W = png.width, H = png.height;
+	const c = document.createElement('canvas'); c.width = W; c.height = H;
+	const g = c.getContext('2d');
+	g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+	const v = document.getElementById('cam');
+	if (v.videoWidth > 0) {
+		// 画面と同じ cover + 鏡
+		const s = Math.max(W / v.videoWidth, H / v.videoHeight);
+		const dw = v.videoWidth * s, dh = v.videoHeight * s;
+		g.save(); g.translate(W, 0); g.scale(-1, 1);
+		g.filter = 'brightness(0.85)';
+		g.drawImage(v, (W - dw) / 2, (H - dh) / 2, dw, dh);
+		g.restore();
+	}
+	g.drawImage(png, 0, 0);
+	const blob = await new Promise(ok => c.toBlob(ok, 'image/png'));
+	window.__pantsuCard = c.toDataURL('image/png');
+	const file = new File([blob], 'pantsu_puncher.png', { type: 'image/png' });
+	if (navigator.canShare && navigator.canShare({ files: [file] })) {
+		try { await navigator.share({ files: [file], title: 'パンツパンチャー' }); return; } catch (e) { console.log('[share] ' + e); }
+	}
+	window.open(URL.createObjectURL(blob), '_blank');
+};
+
+// カメラは取れなくても遊べる(拒否されたら黒背景のまま)
+(async () => {
+	if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+	try {
+		const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+		document.getElementById('cam').srcObject = stream;
+	} catch (e) { console.log('[camera] ' + e); }
+})();
+</script>
+</body>
+</html>
+
