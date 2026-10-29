@@ -8,8 +8,10 @@
 html, body { margin: 0; padding: 0; border: 0; overflow: hidden; background: #000; touch-action: none; }
 /* Godot の Web 書き出しは CameraServer が無いので、ブラウザのカメラ映像を <video> でゲームの裏に敷く。
    canvas は透過(project.godot の transparent_background)。前カメラなので鏡にする */
-#cam { position: fixed; inset: 0; width: 100vw; height: 100vh; object-fit: cover; transform: scaleX(-1); filter: brightness(0.85); z-index: 0; background: #000; }
-#canvas { position: fixed; inset: 0; display: block; z-index: 1; background: transparent; }
+#cam { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); filter: brightness(0.85); z-index: 0; background: #000; }
+/* ⚠️ canvas は置換要素なので inset:0 だけだと幅が属性値のまま = 画面いっぱいに広がらず右に隙間ができる。
+   width/height を明示する(2026-10-29 ユウキさん報告) */
+#canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; z-index: 1; background: transparent; }
 #canvas:focus { outline: none; }
 #status { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; font: 20px sans-serif; z-index: 2; pointer-events: none; }
 </style>
@@ -20,7 +22,7 @@ html, body { margin: 0; padding: 0; border: 0; overflow: hidden; background: #00
 <div id="status">よみこみ中…</div>
 <script src="index.js"></script>
 <script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":12514720,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":12517280,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const status = document.getElementById('status');
 const engine = new Engine(GODOT_CONFIG);
