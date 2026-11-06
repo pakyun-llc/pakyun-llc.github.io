@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, viewport-fit=cover">
+<title>タイヤとばし</title>
+<style>
+html, body { margin: 0; padding: 0; border: 0; overflow: hidden; background: #000; touch-action: none; }
+/* ⚠️ canvas は置換要素なので inset:0 だけだと幅が属性値のまま。width/height を明示する(パンツパンチャーで踏んだ) */
+#canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; z-index: 1; background: #000; }
+#canvas:focus { outline: none; }
+#status { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; font: 20px sans-serif; z-index: 2; pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="canvas">Your browser does not support the canvas tag.</canvas>
+<div id="status">よみこみ中…</div>
+<script src="index.js"></script>
+<script>
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":19190660,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_THREADS_ENABLED = false;
+const status = document.getElementById('status');
+const engine = new Engine(GODOT_CONFIG);
+engine.startGame({
+	onProgress: (cur, total) => { if (total > 0) status.textContent = 'よみこみ中… ' + Math.round(cur / total * 100) + '%'; },
+}).then(() => { status.remove(); }, (err) => { status.textContent = 'エラー: ' + err; });
+
+// 結果カードの共有。Godot から PNG(base64)をもらって navigator.share。無いブラウザは新しいタブで開く
+window.taiyaShare = async (b64, text) => {
+	const bin = atob(b64); const buf = new Uint8Array(bin.length);
+	for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+	const blob = new Blob([buf], { type: 'image/png' });
+	const file = new File([blob], 'taiya.png', { type: 'image/png' });
+	if (navigator.canShare && navigator.canShare({ files: [file] })) {
+		try { await navigator.share({ files: [file], text: text || '' }); return 'shared'; } catch (e) { return 'cancel'; }
+	}
+	window.open(URL.createObjectURL(blob), '_blank');
+	return 'opened';
+};
+</script>
+</body>
+</html>
+
