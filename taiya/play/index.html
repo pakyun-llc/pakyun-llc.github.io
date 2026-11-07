@@ -52,7 +52,7 @@ html, body { margin: 0; padding: 0; border: 0; overflow: hidden; background: #b4
 </script>
 <script src="index.js"></script>
 <script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":11787072,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":11794944,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const status = document.getElementById('status');
 const engine = new Engine(GODOT_CONFIG);
@@ -140,29 +140,38 @@ function recEnd() {
 	return 'idle';
 }
 function showSheet(blob) {
+	// ⚠️iOS は「ユーザーが押した瞬間」でないと共有できない。録画の停止は非同期なので、
+	//   停止した直後に**保存ボタンだけ**を出す(プレビューは出さない。ユウキさん 2026-11-07)
 	const ext = (blob.type.indexOf('mp4') >= 0) ? 'mp4' : 'webm';
 	const file = new File([blob], 'taiya.' + ext, { type: blob.type });
 	const url = URL.createObjectURL(blob);
 	sheetBody.innerHTML = '';
-	const v = document.createElement('video');
-	v.src = url; v.controls = true; v.playsInline = true; v.autoplay = true; v.muted = false;
-	sheetBody.appendChild(v);
-	const row = document.createElement('div');
-	const share = document.createElement('button');
-	share.textContent = '共有する';
-	share.onclick = async () => {
+	const t = document.createElement('div');
+	t.style.cssText = 'margin-top:28vh;font-size:19px;font-weight:600';
+	t.textContent = '録画できました';
+	sheetBody.appendChild(t);
+	const save = document.createElement('button');
+	save.textContent = '動画を保存する';
+	save.style.cssText = 'display:block;margin:22px auto 0;min-width:240px;padding:18px 22px;font-size:19px';
+	save.onclick = async () => {
 		if (navigator.canShare && navigator.canShare({ files: [file] })) {
-			try { await navigator.share({ files: [file], text: 'タイヤとばし https://pakyun.net/taiya/' }); return; } catch (e) { return; }
+			try { await navigator.share({ files: [file] }); } catch (e) {}
+		} else {
+			const a = document.createElement('a');
+			a.href = url; a.download = file.name;
+			document.body.appendChild(a); a.click(); a.remove();
 		}
-		const a = document.createElement('a'); a.href = url; a.download = file.name; a.click();
+		sheet.style.display = 'none';
+		setTimeout(() => URL.revokeObjectURL(url), 30000);
 	};
+	sheetBody.appendChild(save);
 	const close = document.createElement('button');
-	close.className = 'sub'; close.textContent = 'とじる';
+	close.className = 'sub'; close.textContent = 'いらない';
+	close.style.cssText = 'display:block;margin:10px auto 0;min-width:160px';
 	close.onclick = () => { sheet.style.display = 'none'; URL.revokeObjectURL(url); };
-	row.appendChild(share); row.appendChild(close);
-	sheetBody.appendChild(row);
+	sheetBody.appendChild(close);
 	const note = document.createElement('p');
-	note.textContent = '端末の中だけで作っています。共有を押すまで外には出ません。';
+	note.textContent = '端末の中だけで作っています。保存を押すまで外には出ません。';
 	sheetBody.appendChild(note);
 	sheet.style.display = 'block';
 }
