@@ -110,7 +110,7 @@ function pickType() {
 function composite() {
 	outCtx.fillStyle = '#b4c7dc';
 	outCtx.fillRect(0, 0, REC_W, REC_H);
-	if (faceStream && faceEl.videoWidth) {
+	if (faceStream && faceEl.videoWidth && faceEl.readyState >= 2) try {
 		const vw = faceEl.videoWidth, vh = faceEl.videoHeight;
 		const s = Math.max(REC_W / vw, REC_H / vh);
 		const w = vw * s, h = vh * s;
@@ -118,7 +118,7 @@ function composite() {
 		outCtx.translate(REC_W, 0); outCtx.scale(-1, 1);   // 鏡
 		outCtx.drawImage(faceEl, (REC_W - w) / 2, (REC_H - h) / 2, w, h);
 		outCtx.restore();
-	}
+	} catch (e) {}
 	try { outCtx.drawImage(canvas, 0, 0, REC_W, REC_H); } catch (e) {}
 }
 function recStart() {
@@ -132,8 +132,13 @@ function recStart() {
 	outCtx = outCanvas.getContext('2d');
 	// ⚠️fps を渡すとブラウザ任せの取り込みになり、重い場面で絵が固まる。
 	//   0 にして、毎フレーム requestFrame() で 1 枚ずつ送る
-	const vStream = outCanvas.captureStream(0);
+	let vStream = outCanvas.captureStream(0);
 	vTrack = vStream.getVideoTracks()[0];
+	if (!vTrack || typeof vTrack.requestFrame !== 'function') {
+		// requestFrame が無いブラウザ。fps 任せに戻す(固まる可能性はあるが、無音の静止よりまし)
+		vStream = outCanvas.captureStream(REC_FPS);
+		vTrack = vStream.getVideoTracks()[0];
+	}
 	const tracks = [vTrack];
 	if (window.__tap) tracks.push(...window.__tap.sink.stream.getAudioTracks());
 	chunks = [];
@@ -147,10 +152,15 @@ function recStart() {
 		showSheet(blob);
 	};
 	const loop = () => {
-		if (!rec) return;
-		composite();
-		if (vTrack && vTrack.requestFrame) vTrack.requestFrame();
+		// ⚠️先に次を予約する。composite で例外が出ても鎖が切れない
+		//   (切れると絵だけ止まって音だけ進む。ユウキさん報告 2026-11-07)
 		rafId = requestAnimationFrame(loop);
+		if (!rec) return;
+		try {
+			window.__recFrames = (window.__recFrames || 0) + 1;   // 検証用: 取り込んだ枚数
+			composite();
+			if (vTrack && vTrack.requestFrame) vTrack.requestFrame();
+		} catch (e) {}
 	};
 	rafId = requestAnimationFrame(loop);
 	rec.start();
