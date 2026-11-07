@@ -20,12 +20,17 @@ html, body { margin: 0; padding: 0; border: 0; overflow: hidden; background: #b4
   border: 0; border-radius: 14px; padding: 14px 22px; margin: 6px; min-width: 140px; }
 #sheet button.sub { background: #4a4a52; }
 #sheet p { opacity: .85; margin: 6px 0 0; font-size: 13px; }
+/* 録画の注意書き。⚠️動画には写らない(合成するのは顔とゲームの canvas だけ) */
+#toast { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); z-index: 5;
+  background: rgba(0,0,0,.76); color: #fff; font: 600 15px -apple-system, system-ui, sans-serif;
+  padding: 12px 18px; border-radius: 14px; display: none; text-align: center; line-height: 1.5; }
 </style>
 </head>
 <body>
 <video id="face" autoplay playsinline muted></video>
 <canvas id="canvas">Your browser does not support the canvas tag.</canvas>
 <div id="status">よみこみ中…</div>
+<div id="toast"></div>
 <div id="sheet">
   <div id="sheetBody"></div>
 </div>
@@ -52,7 +57,7 @@ html, body { margin: 0; padding: 0; border: 0; overflow: hidden; background: #b4
 </script>
 <script src="index.js"></script>
 <script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":11795456,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":11795440,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const status = document.getElementById('status');
 const engine = new Engine(GODOT_CONFIG);
@@ -64,6 +69,14 @@ const canvas = document.getElementById('canvas');
 const faceEl = document.getElementById('face');
 const sheet = document.getElementById('sheet');
 const sheetBody = document.getElementById('sheetBody');
+const toastEl = document.getElementById('toast');
+let toastTimer = 0;
+function toast(text, ms) {
+	toastEl.textContent = text;
+	toastEl.style.display = 'block';
+	clearTimeout(toastTimer);
+	toastTimer = setTimeout(() => { toastEl.style.display = 'none'; }, ms || 3500);
+}
 
 // ---------------- 顔モード ----------------
 let faceStream = null;
@@ -141,11 +154,13 @@ function recStart() {
 	};
 	rafId = requestAnimationFrame(loop);
 	rec.start();
+	toast('録画中。画面のどこでも すばやく2回タップ で停止します', 4000);
 	recStop = setTimeout(recEnd, REC_MAX);
 	return 'rec';
 }
 function recEnd() {
 	clearTimeout(recStop);
+	toastEl.style.display = 'none';
 	if (rec && rec.state !== 'inactive') { rec.stop(); return 'stopped'; }
 	return 'idle';
 }
