@@ -52,7 +52,7 @@ html, body { margin: 0; padding: 0; border: 0; overflow: hidden; background: #b4
 </script>
 <script src="index.js"></script>
 <script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":11795312,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":11795456,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const status = document.getElementById('status');
 const engine = new Engine(GODOT_CONFIG);
@@ -86,7 +86,7 @@ function faceOff() {
 
 // ---------------- 録画 ----------------
 const REC_W = 540, REC_H = 960, REC_FPS = 30, REC_MAX = 180000;
-let rec = null, chunks = [], outCanvas = null, outCtx = null, drawTimer = 0, recStop = 0;
+let rec = null, chunks = [], outCanvas = null, outCtx = null, recStop = 0, rafId = 0, vTrack = null;
 
 function pickType() {
 	const list = ['video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm'];
@@ -117,19 +117,29 @@ function recStart() {
 	outCanvas = document.createElement('canvas');
 	outCanvas.width = REC_W; outCanvas.height = REC_H;
 	outCtx = outCanvas.getContext('2d');
-	const tracks = outCanvas.captureStream(REC_FPS).getVideoTracks();
+	// ⚠️fps を渡すとブラウザ任せの取り込みになり、重い場面で絵が固まる。
+	//   0 にして、毎フレーム requestFrame() で 1 枚ずつ送る
+	const vStream = outCanvas.captureStream(0);
+	vTrack = vStream.getVideoTracks()[0];
+	const tracks = [vTrack];
 	if (window.__tap) tracks.push(...window.__tap.sink.stream.getAudioTracks());
 	chunks = [];
 	try { rec = new MediaRecorder(new MediaStream(tracks), { mimeType: type, videoBitsPerSecond: 2500000 }); }
 	catch (e) { rec = null; return 'unsupported'; }
 	rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
 	rec.onstop = () => {
-		clearInterval(drawTimer); drawTimer = 0;
+		if (rafId) cancelAnimationFrame(rafId); rafId = 0;
 		const blob = new Blob(chunks, { type: rec.mimeType || type });
 		rec = null;
 		showSheet(blob);
 	};
-	drawTimer = setInterval(composite, 1000 / REC_FPS);
+	const loop = () => {
+		if (!rec) return;
+		composite();
+		if (vTrack && vTrack.requestFrame) vTrack.requestFrame();
+		rafId = requestAnimationFrame(loop);
+	};
+	rafId = requestAnimationFrame(loop);
 	rec.start();
 	recStop = setTimeout(recEnd, REC_MAX);
 	return 'rec';
