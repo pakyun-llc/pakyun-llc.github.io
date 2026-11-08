@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, viewport-fit=cover">
-<title>タイヤとばし</title>
+<title>タイヤ飛ばし</title>
 <style>
 html, body { margin: 0; padding: 0; border: 0; overflow: hidden; background: #b4c7dc; touch-action: none; }
 /* 顔モードのカメラ映像。ゲームの下に敷く(canvas は透過) */
@@ -193,7 +193,7 @@ function showSheet(blob) {
 	save.style.cssText = 'display:block;margin:22px auto 0;min-width:240px;padding:18px 22px;font-size:19px';
 	save.onclick = async () => {
 		if (navigator.canShare && navigator.canShare({ files: [file] })) {
-			try { await navigator.share({ files: [file] }); } catch (e) {}
+			try { await navigator.share({ files: [file], text: 'タイヤ飛ばし https://pakyun.net/taiyatobashi/' }); } catch (e) {}
 		} else {
 			const a = document.createElement('a');
 			a.href = url; a.download = file.name;
