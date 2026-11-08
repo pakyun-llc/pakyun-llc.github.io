@@ -57,7 +57,7 @@ html, body { margin: 0; padding: 0; border: 0; overflow: hidden; background: #b4
 </script>
 <script src="index.js"></script>
 <script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":4810332,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":4810508,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const status = document.getElementById('status');
 const engine = new Engine(GODOT_CONFIG);
@@ -151,11 +151,14 @@ function recStart() {
 		rec = null;
 		showSheet(blob);
 	};
-	const loop = () => {
+	let lastT = 0;
+	const loop = (t) => {
 		// ⚠️先に次を予約する。composite で例外が出ても鎖が切れない
 		//   (切れると絵だけ止まって音だけ進む。ユウキさん報告 2026-11-07)
 		rafId = requestAnimationFrame(loop);
 		if (!rec) return;
+		if (t - lastT < 40) return;      // 24fps 程度に抑える(毎フレームだと端末が詰まる)
+		lastT = t;
 		try {
 			window.__recFrames = (window.__recFrames || 0) + 1;   // 検証用: 取り込んだ枚数
 			composite();
@@ -163,7 +166,7 @@ function recStart() {
 		} catch (e) {}
 	};
 	rafId = requestAnimationFrame(loop);
-	rec.start();
+	rec.start(1000);   // 1 秒ごとに切り出す(長い録画に強い)
 	toast('録画中。画面のどこでも すばやく2回タップ で停止します', 4000);
 	recStop = setTimeout(recEnd, REC_MAX);
 	return 'rec';
