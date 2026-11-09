@@ -29,7 +29,7 @@ html, body { margin: 0; padding: 0; border: 0; overflow: hidden; background: #b4
 <body>
 <video id="face" autoplay playsinline muted></video>
 <canvas id="canvas">Your browser does not support the canvas tag.</canvas>
-<div id="status">よみこみ中…</div>
+<div id="status">…</div>
 <div id="toast"></div>
 <div id="sheet">
   <div id="sheetBody"></div>
@@ -57,13 +57,18 @@ html, body { margin: 0; padding: 0; border: 0; overflow: hidden; background: #b4
 </script>
 <script src="index.js"></script>
 <script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":6158404,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+// 日本語以外のブラウザでは英語(ゲーム本体も navigator.language で切り替える)
+const EN = !(navigator.language || 'ja').startsWith('ja');
+const L = (ja, en) => EN ? en : ja;
+document.documentElement.lang = EN ? 'en' : 'ja';
+document.getElementById('status').textContent = L('よみこみ中…', 'Loading…');
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":6160580,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const status = document.getElementById('status');
 const engine = new Engine(GODOT_CONFIG);
 engine.startGame({
-	onProgress: (cur, total) => { if (total > 0) status.textContent = 'よみこみ中… ' + Math.round(cur / total * 100) + '%'; },
-}).then(() => { status.remove(); }, (err) => { status.textContent = 'エラー: ' + err; });
+	onProgress: (cur, total) => { if (total > 0) status.textContent = L('よみこみ中… ', 'Loading… ') + Math.round(cur / total * 100) + '%'; },
+}).then(() => { status.remove(); }, (err) => { status.textContent = L('エラー: ', 'Error: ') + err; });
 
 const canvas = document.getElementById('canvas');
 const faceEl = document.getElementById('face');
@@ -167,7 +172,7 @@ function recStart() {
 	};
 	rafId = requestAnimationFrame(loop);
 	rec.start(1000);   // 1 秒ごとに切り出す(長い録画に強い)
-	toast('録画中。画面のどこでも すばやく2回タップ で停止します', 4000);
+	toast(L('録画中。画面のどこでも すばやく2回タップ で停止します', 'Recording. Double-tap anywhere to stop'), 4000);
 	recStop = setTimeout(recEnd, REC_MAX);
 	return 'rec';
 }
@@ -186,14 +191,14 @@ function showSheet(blob) {
 	sheetBody.innerHTML = '';
 	const t = document.createElement('div');
 	t.style.cssText = 'margin-top:28vh;font-size:19px;font-weight:600';
-	t.textContent = '録画できました';
+	t.textContent = L('録画できました', 'Recording saved');
 	sheetBody.appendChild(t);
 	const save = document.createElement('button');
-	save.textContent = '動画を保存する';
+	save.textContent = L('動画を保存する', 'Save video');
 	save.style.cssText = 'display:block;margin:22px auto 0;min-width:240px;padding:18px 22px;font-size:19px';
 	save.onclick = async () => {
 		if (navigator.canShare && navigator.canShare({ files: [file] })) {
-			try { await navigator.share({ files: [file], text: 'タイヤ飛ばし https://pakyun.net/taiyatobashi/' }); } catch (e) {}
+			try { await navigator.share({ files: [file], text: L('タイヤ飛ばし', 'Tire Launcher') + ' https://pakyun.net/taiyatobashi/' }); } catch (e) {}
 		} else {
 			const a = document.createElement('a');
 			a.href = url; a.download = file.name;
@@ -204,12 +209,12 @@ function showSheet(blob) {
 	};
 	sheetBody.appendChild(save);
 	const close = document.createElement('button');
-	close.className = 'sub'; close.textContent = 'いらない';
+	close.className = 'sub'; close.textContent = L('いらない', 'Discard');
 	close.style.cssText = 'display:block;margin:10px auto 0;min-width:160px';
 	close.onclick = () => { sheet.style.display = 'none'; URL.revokeObjectURL(url); };
 	sheetBody.appendChild(close);
 	const note = document.createElement('p');
-	note.textContent = '端末の中だけで作っています。保存を押すまで外には出ません。';
+	note.textContent = L('端末の中だけで作っています。保存を押すまで外には出ません。', 'Made on your device only. Nothing leaves it until you tap save.');
 	sheetBody.appendChild(note);
 	sheet.style.display = 'block';
 }
