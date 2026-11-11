@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, viewport-fit=cover">
+<title>キャッチ!おじさん</title>
+<!-- AdSense(pub ID は AdMob と同じ公開情報。審査中はなにも出ない。自動広告は AdSense 側で OFF のまま) -->
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7875457474969202" crossorigin="anonymous"></script>
+<style>
+html, body { margin: 0; padding: 0; border: 0; overflow: hidden; background: #b4c7dc; touch-action: none; }
+/* 顔モードのカメラ映像。ゲームの下に敷く(canvas は透過) */
+#face { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); z-index: 0; display: none; background: #000; }
+/* ⚠️ canvas は置換要素なので inset:0 だけだと幅が属性値のまま。width/height を明示する */
+#canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; z-index: 1; background: transparent; }
+#canvas:focus { outline: none; }
+#status { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; font: 20px sans-serif; z-index: 3; pointer-events: none; }
+/* 録画のプレビュー */
+#sheet { position: fixed; inset: 0; z-index: 4; display: none; background: rgba(0,0,0,.82); color: #fff;
+  font: 16px -apple-system, system-ui, sans-serif; text-align: center; padding: 24px 16px; box-sizing: border-box; }
+#sheet video { width: 100%; max-width: 420px; border-radius: 16px; margin: 12px 0; background: #000; }
+#sheet button { font: 600 17px -apple-system, system-ui, sans-serif; color: #fff; background: #e24a28;
+  border: 0; border-radius: 14px; padding: 14px 22px; margin: 6px; min-width: 140px; }
+#sheet button.sub { background: #4a4a52; }
+#sheet p { opacity: .85; margin: 6px 0 0; font-size: 13px; }
+/* 録画の注意書き。⚠️動画には写らない(合成するのは顔とゲームの canvas だけ) */
+#toast { position: fixed; left: 50%; top: 14px; transform: translateX(-50%); z-index: 5;
+  background: rgba(0,0,0,.76); color: #fff; font: 600 15px -apple-system, system-ui, sans-serif;
+  padding: 12px 18px; border-radius: 14px; display: none; text-align: center; line-height: 1.5; }
+</style>
+</head>
+<body>
+<video id="face" autoplay playsinline muted></video>
+<canvas id="canvas">Your browser does not support the canvas tag.</canvas>
+<div id="status">…</div>
+<div id="toast"></div>
+<div id="sheet">
+  <div id="sheetBody"></div>
+</div>
+<script>
+// ⚠️録画で音も録るには、**Godot が起動する前**に AudioNode.connect を横取りして、
+//   スピーカーへ行く音を録音用の出口にも分岐させる必要がある(destination からは取り出せない)。
+//   Codex 2026-11-07: docs/2026-11-07_codex_record.md
+(function () {
+  const connect = AudioNode.prototype.connect;
+  AudioNode.prototype.connect = function (dest, ...args) {
+    const r = connect.call(this, dest, ...args);
+    try {
+      if (dest && dest === this.context.destination) {
+        const ctx = this.context;
+        if (!window.__tap || window.__tap.ctx !== ctx) {
+          window.__tap = { ctx: ctx, sink: ctx.createMediaStreamDestination() };
+        }
+        connect.call(this, window.__tap.sink, args[0] || 0, 0);
+      }
+    } catch (e) {}
+    return r;
+  };
+})();
+</script>
+<script src="index.js"></script>
+<script>
+// 日本語以外のブラウザでは英語(ゲーム本体も navigator.language で切り替える)
+const EN = !(navigator.language || 'ja').startsWith('ja');
+const L = (ja, en) => EN ? en : ja;
+document.documentElement.lang = EN ? 'en' : 'ja';
+document.getElementById('status').textContent = L('よみこみ中…', 'Loading…');
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":5098468,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_THREADS_ENABLED = false;
+const status = document.getElementById('status');
+const engine = new Engine(GODOT_CONFIG);
+engine.startGame({
+	onProgress: (cur, total) => { if (total > 0) status.textContent = L('よみこみ中… ', 'Loading… ') + Math.round(cur / total * 100) + '%'; },
+}).then(() => { status.remove(); }, (err) => { status.textContent = L('エラー: ', 'Error: ') + err; });
+
+const canvas = document.getElementById('canvas');
+const faceEl = document.getElementById('face');
+const sheet = document.getElementById('sheet');
+const sheetBody = document.getElementById('sheetBody');
+const toastEl = document.getElementById('toast');
+let toastTimer = 0;
+function toast(text, ms) {
+	toastEl.textContent = text;
+	toastEl.style.display = 'block';
+	clearTimeout(toastTimer);
+	toastTimer = setTimeout(() => { toastEl.style.display = 'none'; }, ms || 3500);
+}
+
+// ---------------- 顔モード ----------------
+let faceStream = null;
+async function faceOn() {
+	if (faceStream) return 'on';
+	try {
+		faceStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+	} catch (e) { return 'denied'; }
+	faceEl.srcObject = faceStream;
+	faceEl.style.display = 'block';
+	try { await faceEl.play(); } catch (e) {}
+	return 'on';
+}
+function faceOff() {
+	if (faceStream) { faceStream.getTracks().forEach(t => t.stop()); faceStream = null; }
+	faceEl.srcObject = null;
+	faceEl.style.display = 'none';
+	return 'off';
+}
+
+// ---------------- 録画 ----------------
+const REC_W = 540, REC_H = 960, REC_FPS = 30, REC_MAX = 180000;
+let rec = null, chunks = [], outCanvas = null, outCtx = null, recStop = 0, rafId = 0, vTrack = null;
+
+function pickType() {
+	const list = ['video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm'];
+	for (const t of list) { try { if (MediaRecorder.isTypeSupported(t)) return t; } catch (e) {} }
+	return '';
+}
+// 顔(下)→ゲーム(上)を 1 枚に合成する。⚠️HTML の重なりは captureStream に入らないので自分で描く
+function composite() {
+	outCtx.fillStyle = '#b4c7dc';
+	outCtx.fillRect(0, 0, REC_W, REC_H);
+	if (faceStream && faceEl.videoWidth && faceEl.readyState >= 2) try {
+		const vw = faceEl.videoWidth, vh = faceEl.videoHeight;
+		const s = Math.max(REC_W / vw, REC_H / vh);
+		const w = vw * s, h = vh * s;
+		outCtx.save();
+		outCtx.translate(REC_W, 0); outCtx.scale(-1, 1);   // 鏡
+		outCtx.drawImage(faceEl, (REC_W - w) / 2, (REC_H - h) / 2, w, h);
+		outCtx.restore();
+	} catch (e) {}
+	try { outCtx.drawImage(canvas, 0, 0, REC_W, REC_H); } catch (e) {}
+}
+function recStart() {
+	if (rec) return 'rec';
+	if (typeof MediaRecorder === 'undefined') return 'unsupported';
+	const type = pickType();
+	if (!type) return 'unsupported';
+	try { if (window.__tap) window.__tap.ctx.resume(); } catch (e) {}
+	outCanvas = document.createElement('canvas');
+	outCanvas.width = REC_W; outCanvas.height = REC_H;
+	outCtx = outCanvas.getContext('2d');
+	// ⚠️fps を渡すとブラウザ任せの取り込みになり、重い場面で絵が固まる。
+	//   0 にして、毎フレーム requestFrame() で 1 枚ずつ送る
+	let vStream = outCanvas.captureStream(0);
+	vTrack = vStream.getVideoTracks()[0];
+	if (!vTrack || typeof vTrack.requestFrame !== 'function') {
+		// requestFrame が無いブラウザ。fps 任せに戻す(固まる可能性はあるが、無音の静止よりまし)
+		vStream = outCanvas.captureStream(REC_FPS);
+		vTrack = vStream.getVideoTracks()[0];
+	}
+	const tracks = [vTrack];
+	if (window.__tap) tracks.push(...window.__tap.sink.stream.getAudioTracks());
+	chunks = [];
+	try { rec = new MediaRecorder(new MediaStream(tracks), { mimeType: type, videoBitsPerSecond: 2500000 }); }
+	catch (e) { rec = null; return 'unsupported'; }
+	rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+	rec.onstop = () => {
+		if (rafId) cancelAnimationFrame(rafId); rafId = 0;
+		const blob = new Blob(chunks, { type: rec.mimeType || type });
+		rec = null;
+		showSheet(blob);
+	};
+	let lastT = 0;
+	const loop = (t) => {
+		// ⚠️先に次を予約する。composite で例外が出ても鎖が切れない
+		//   (切れると絵だけ止まって音だけ進む。ユウキさん報告 2026-11-07)
+		rafId = requestAnimationFrame(loop);
+		if (!rec) return;
+		if (t - lastT < 40) return;      // 24fps 程度に抑える(毎フレームだと端末が詰まる)
+		lastT = t;
+		try {
+			window.__recFrames = (window.__recFrames || 0) + 1;   // 検証用: 取り込んだ枚数
+			composite();
+			if (vTrack && vTrack.requestFrame) vTrack.requestFrame();
+		} catch (e) {}
+	};
+	rafId = requestAnimationFrame(loop);
+	rec.start(1000);   // 1 秒ごとに切り出す(長い録画に強い)
+	toast(L('録画中。画面のどこでも すばやく2回タップ で停止します', 'Recording. Double-tap anywhere to stop'), 4000);
+	recStop = setTimeout(recEnd, REC_MAX);
+	return 'rec';
+}
+function recEnd() {
+	clearTimeout(recStop);
+	toastEl.style.display = 'none';
+	if (rec && rec.state !== 'inactive') { rec.stop(); return 'stopped'; }
+	return 'idle';
+}
+function showSheet(blob) {
+	// ⚠️iOS は「ユーザーが押した瞬間」でないと共有できない。録画の停止は非同期なので、
+	//   停止した直後に**保存ボタンだけ**を出す(プレビューは出さない。ユウキさん 2026-11-07)
+	const ext = (blob.type.indexOf('mp4') >= 0) ? 'mp4' : 'webm';
+	const file = new File([blob], 'catch.' + ext, { type: blob.type });
+	const url = URL.createObjectURL(blob);
+	sheetBody.innerHTML = '';
+	const t = document.createElement('div');
+	t.style.cssText = 'margin-top:28vh;font-size:19px;font-weight:600';
+	t.textContent = L('録画できました', 'Recording ready');
+	sheetBody.appendChild(t);
+	const save = document.createElement('button');
+	save.textContent = L('動画を保存する', 'Save video');
+	save.style.cssText = 'display:block;margin:22px auto 0;min-width:240px;padding:18px 22px;font-size:19px';
+	save.onclick = async () => {
+		if (navigator.canShare && navigator.canShare({ files: [file] })) {
+			try { await navigator.share({ files: [file], text: L('キャッチ!おじさん', 'Toss & Catch') }); } catch (e) {}
+		} else {
+			const a = document.createElement('a');
+			a.href = url; a.download = file.name;
+			document.body.appendChild(a); a.click(); a.remove();
+		}
+		sheet.style.display = 'none';
+		setTimeout(() => URL.revokeObjectURL(url), 30000);
+	};
+	sheetBody.appendChild(save);
+	const close = document.createElement('button');
+	close.className = 'sub'; close.textContent = L('いらない', 'Discard');
+	close.style.cssText = 'display:block;margin:10px auto 0;min-width:160px';
+	close.onclick = () => { sheet.style.display = 'none'; URL.revokeObjectURL(url); };
+	sheetBody.appendChild(close);
+	const note = document.createElement('p');
+	note.textContent = L('端末の中だけで作っています。保存を押すまで外には出ません。', 'Made on your device only. Nothing leaves it until you tap save.');
+	sheetBody.appendChild(note);
+	sheet.style.display = 'block';
+}
+
+// 結果画面の「共有」: 画像 1 枚を端末の共有シートへ(使えなければ保存)
+window.catchShare = async (b64, text) => {
+	try {
+		const bin = atob(b64); const u8 = new Uint8Array(bin.length);
+		for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+		const file = new File([u8], 'holdit.png', { type: 'image/png' });
+		const save = () => { const a = document.createElement('a'); const url = URL.createObjectURL(file);
+			a.href = url; a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
+			setTimeout(() => URL.revokeObjectURL(url), 30000); };
+		if (navigator.canShare && navigator.canShare({ files: [file] })) {
+			// ⚠️やめた(AbortError)は何もしない。それ以外の失敗は黙らず、保存に切り替える
+			try { await navigator.share({ files: [file], text }); } catch (e) { if (!e || e.name !== 'AbortError') save(); }
+			return;
+		}
+		save();
+	} catch (e) {}
+};
+
+// Godot から呼ぶ窓口
+window.catchGame = {
+	face: (on) => on ? faceOn() : faceOff(),
+	faceState: () => faceStream ? 'on' : 'off',
+	rec: (on) => on ? recStart() : recEnd(),
+	recState: () => rec ? 'rec' : 'idle',
+	canRec: () => (typeof MediaRecorder !== 'undefined' && !!pickType()) ? '1' : '0',
+};
+</script>
+</body>
+</html>
+

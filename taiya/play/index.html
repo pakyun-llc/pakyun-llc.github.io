@@ -229,6 +229,24 @@ window.taiya = {
 	recState: () => rec ? 'rec' : 'idle',
 	canRec: () => (typeof MediaRecorder !== 'undefined' && !!pickType()) ? '1' : '0',
 };
+
+// 結果画面の「共有」。Godot から PNG(base64)と文をもらう。共有できない環境・失敗時は画像の保存に切り替える
+// (2026-11-11: この受け口が無く、Web 版の「共有」ボタンが何も起きなかった)
+window.taiyaShare = async (b64, text) => {
+	try {
+		const bin = atob(b64); const u8 = new Uint8Array(bin.length);
+		for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+		const file = new File([u8], 'taiya.png', { type: 'image/png' });
+		const save = () => { const a = document.createElement('a'); const url = URL.createObjectURL(file);
+			a.href = url; a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
+			setTimeout(() => URL.revokeObjectURL(url), 30000); };
+		if (navigator.canShare && navigator.canShare({ files: [file] })) {
+			try { await navigator.share({ files: [file], text }); } catch (e) { if (!e || e.name !== 'AbortError') save(); }
+			return;
+		}
+		save();
+	} catch (e) {}
+};
 </script>
 </body>
 </html>

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, viewport-fit=cover">
+<title>うちの子しろめ</title>
+<link rel="icon" href="index.icon.png">
+<!-- ⚠️このページは利用者のペット写真を扱う。外部のスクリプト(広告・計測)は読み込まない。写真はページの中だけで使い、どこにも送らない -->
+<style>
+html, body { margin: 0; padding: 0; border: 0; overflow: hidden; background: #121214; touch-action: none; }
+/* ⚠️ canvas は置換要素なので inset:0 だけだと幅が属性値のまま。width/height を明示する */
+#canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; z-index: 1; }
+#canvas:focus { outline: none; }
+#status { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; font: 20px sans-serif; z-index: 3; pointer-events: none; }
+#pick { position: fixed; left: -9999px; top: 0; width: 1px; height: 1px; opacity: 0; }
+/* 写真待ちのあいだだけ出す本物のボタン(label)。ゲーム側から開く input.click() が通らなかったときの保険 = 押せば必ず開く */
+#pickBtn { position: fixed; left: 50%; top: 56%; transform: translateX(-50%); z-index: 2; display: none; white-space: nowrap;
+  font: 600 18px -apple-system, system-ui, sans-serif; color: #fff; background: #3380e6; border-radius: 12px; padding: 16px 26px; }
+</style>
+</head>
+<body>
+<canvas id="canvas">Your browser does not support the canvas tag.</canvas>
+<div id="status">…</div>
+<input id="pick" type="file" accept="image/*">
+<label id="pickBtn" for="pick"></label>
+<script src="index.js"></script>
+<script>
+// 日本語以外のブラウザでは英語(ゲーム本体も navigator.language で切り替える)
+const EN = !(navigator.language || 'ja').startsWith('ja');
+const L = (ja, en) => EN ? en : ja;
+document.documentElement.lang = EN ? 'en' : 'ja';
+document.getElementById('status').textContent = L('よみこみ中…', 'Loading…');
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":7213756,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const status = document.getElementById('status');
+const engine = new Engine(GODOT_CONFIG);
+engine.startGame({
+	onProgress: (cur, total) => { if (total > 0) status.textContent = L('よみこみ中… ', 'Loading… ') + Math.round(cur / total * 100) + '%'; },
+}).then(() => { status.remove(); }, (err) => { status.textContent = L('エラー: ', 'Error: ') + err; });
+
+// ---------------- 写真の取り込み(このページの中だけ。送信しない)----------------
+// 選んだ画像を canvas に描き直して長辺 1280 の JPEG にする(= 向きを直す・EXIF を捨てる・小さくする)。
+// Godot は window.shirome.take() を 0.25 秒おきに読みに来る('' = まだ / 'cancel' / 'error' / base64 の JPEG)。
+const PHOTO_MAX = 1280;
+const pickEl = document.getElementById('pick');
+let photo = '';
+pickEl.addEventListener('change', async () => {
+	const f = pickEl.files && pickEl.files[0];
+	pickEl.value = '';
+	if (!f) { photo = 'cancel'; return; }
+	try {
+		const url = URL.createObjectURL(f);
+		const img = new Image();
+		await new Promise((ok, ng) => { img.onload = ok; img.onerror = ng; img.src = url; });
+		const s = Math.min(1, PHOTO_MAX / Math.max(img.naturalWidth, img.naturalHeight));
+		const c = document.createElement('canvas');
+		c.width = Math.max(1, Math.round(img.naturalWidth * s)); c.height = Math.max(1, Math.round(img.naturalHeight * s));
+		const g = c.getContext('2d');
+		g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);     // 透明な PNG は白地に
+		g.drawImage(img, 0, 0, c.width, c.height);
+		URL.revokeObjectURL(url);
+		photo = c.toDataURL('image/jpeg', 0.92).split(',')[1];
+	} catch (e) { photo = 'error'; }
+});
+pickEl.addEventListener('cancel', () => { photo = 'cancel'; });
+const pickBtn = document.getElementById('pickBtn');
+pickBtn.textContent = L('写真をえらぶ', 'Choose a photo');
+window.shirome = {
+	// ⚠️ファイル選択は「押した直後」でないと開かない。Godot のタップ処理から数コマ以内に呼ぶこと
+	pick: () => { photo = ''; pickBtn.style.display = 'block'; try { pickEl.click(); } catch (e) {} return 'ok'; },
+	take: () => { const p = photo; photo = ''; if (p) pickBtn.style.display = 'none'; return p; },
+	done: () => { pickBtn.style.display = 'none'; return 'ok'; },
+};
+
+// 結果画面の「共有」: 画面を撮り直した画像 1 枚を端末の共有シートへ(使えなければ保存)。元写真そのものは出さない
+window.shiromeShare = async (b64, text) => {
+	try {
+		const bin = atob(b64); const u8 = new Uint8Array(bin.length);
+		for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+		const file = new File([u8], 'shirome.png', { type: 'image/png' });
+		const save = () => { const a = document.createElement('a'); const url = URL.createObjectURL(file);
+			a.href = url; a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
+			setTimeout(() => URL.revokeObjectURL(url), 30000); };
+		if (navigator.canShare && navigator.canShare({ files: [file] })) {
+			// ⚠️やめた(AbortError)は何もしない。それ以外の失敗は黙らず、保存に切り替える
+			try { await navigator.share({ files: [file], text }); } catch (e) { if (!e || e.name !== 'AbortError') save(); }
+			return;
+		}
+		save();
+	} catch (e) {}
+};
+</script>
+</body>
+</html>
+

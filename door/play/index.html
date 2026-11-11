@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, viewport-fit=cover">
+<title>ギィ〜</title>
+<style>
+html, body { margin: 0; padding: 0; border: 0; overflow: hidden; background: #0d0a0a; touch-action: none; }
+/* ⚠️ canvas は置換要素なので inset:0 だけだと幅が属性値のまま。width/height を明示する */
+#canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#canvas:focus { outline: none; }
+#status { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; font: 20px sans-serif; pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="canvas">Your browser does not support the canvas tag.</canvas>
+<div id="status">…</div>
+<!-- 声の高さと音量を測る(マイク → 音程)。解析はこの端末の中だけ。送らない・保存しない。録画機能は試作には入れていない -->
+<script src="koe.js"></script>
+<script src="index.js"></script>
+<script>
+const EN = !(navigator.language || 'ja').startsWith('ja');
+const L = (ja, en) => EN ? en : ja;
+document.documentElement.lang = EN ? 'en' : 'ja';
+const status = document.getElementById('status');
+status.textContent = L('よみこみ中…', 'Loading…');
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":5219436,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const engine = new Engine(GODOT_CONFIG);
+engine.startGame({
+	onProgress: (cur, total) => { if (total > 0) status.textContent = L('よみこみ中… ', 'Loading… ') + Math.round(cur / total * 100) + '%'; },
+}).then(() => { status.remove(); }, (err) => { status.textContent = L('エラー: ', 'Error: ') + err; });
+// 裏に回ったらマイクを止める(戻ったらタイトルから声モードを選び直す)
+document.addEventListener('visibilitychange', () => { if (document.hidden && window.koe && window.koe.state() === 'on') window.koe.stop(); });
+</script>
+</body>
+</html>
+
