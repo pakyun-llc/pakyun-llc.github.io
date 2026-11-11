@@ -30,7 +30,7 @@ const EN = !(navigator.language || 'ja').startsWith('ja');
 const L = (ja, en) => EN ? en : ja;
 document.documentElement.lang = EN ? 'en' : 'ja';
 document.getElementById('status').textContent = L('よみこみ中…', 'Loading…');
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":7213756,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":7219772,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const status = document.getElementById('status');
 const engine = new Engine(GODOT_CONFIG);
 engine.startGame({
@@ -69,6 +69,31 @@ window.shirome = {
 	pick: () => { photo = ''; pickBtn.style.display = 'block'; try { pickEl.click(); } catch (e) {} return 'ok'; },
 	take: () => { const p = photo; photo = ''; if (p) pickBtn.style.display = 'none'; return p; },
 	done: () => { pickBtn.style.display = 'none'; return 'ok'; },
+};
+
+// ---------------- 見守り: そのあいだだけ画面を消さない + 離れていた(タブが隠れていた)秒を数える ----------------
+// wakeLock が無いブラウザでは何もしない。タブを隠すと OS が外すので、戻ったとき(visibilitychange)に取り直す
+let wOn = false, wLock = null, wHidAt = 0, wAway = 0, wState = 'off';
+const wAcquire = async () => {
+	if (!wOn || document.visibilityState !== 'visible') return;
+	if (!('wakeLock' in navigator)) { wState = 'unsupported'; return; }
+	try {
+		const l = await navigator.wakeLock.request('screen');
+		if (!wOn) { l.release().catch(() => {}); return; }
+		wLock = l; wState = 'held';
+	} catch (e) { wState = 'failed'; }
+};
+document.addEventListener('visibilitychange', () => {
+	if (!wOn) return;
+	if (document.visibilityState === 'hidden') { wHidAt = performance.now(); return; }
+	if (wHidAt) { wAway += performance.now() - wHidAt; wHidAt = 0; }
+	wAcquire();
+});
+window.shiromeWatch = {
+	on: () => { wOn = true; wAway = 0; wHidAt = 0; wAcquire(); return 'ok'; },
+	off: () => { wOn = false; wState = 'off'; if (wLock) { wLock.release().catch(() => {}); wLock = null; } return 'ok'; },
+	away: () => { const a = wAway; wAway = 0; return a / 1000; },      // Godot が 0.3 秒おきに読む(秒。読んだら 0 に戻す)
+	lock: () => wState,                                                // 検証用: off / held / failed / unsupported
 };
 
 // 結果画面の「共有」: 画面を撮り直した画像 1 枚を端末の共有シートへ(使えなければ保存)。元写真そのものは出さない
