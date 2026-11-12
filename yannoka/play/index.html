@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta name="robots" content="noindex">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, viewport-fit=cover">
+<title>やんのかステップ</title>
+<link rel="icon" href="data:,">
+<!-- 試作。外部のスクリプト(広告・計測)は読み込まない -->
+<style>
+html, body { margin: 0; padding: 0; border: 0; overflow: hidden; background: #121214; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+/* ⚠️ canvas は置換要素なので inset:0 だけだと幅が属性値のまま。width/height を明示する */
+#canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; z-index: 1; }
+#canvas:focus { outline: none; }
+#status { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; font: 20px sans-serif; z-index: 3; pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="canvas">Your browser does not support the canvas tag.</canvas>
+<div id="status">…</div>
+<script src="index.js"></script>
+<script>
+// 日本語以外のブラウザでは英語(ゲーム本体も navigator.language で切り替える)
+const EN = !(navigator.language || 'ja').startsWith('ja');
+const L = (ja, en) => EN ? en : ja;
+document.documentElement.lang = EN ? 'en' : 'ja';
+document.getElementById('status').textContent = L('よみこみ中…', 'Loading…');
+// 長押しが操作なので、長押しメニュー(コピー・画像保存)を出さない
+document.addEventListener('contextmenu', (e) => e.preventDefault());
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":7150092,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const status = document.getElementById('status');
+const engine = new Engine(GODOT_CONFIG);
+engine.startGame({
+	onProgress: (cur, total) => { if (total > 0) status.textContent = L('よみこみ中… ', 'Loading… ') + Math.round(cur / total * 100) + '%'; },
+}).then(() => { status.remove(); }, (err) => { status.textContent = L('エラー: ', 'Error: ') + err; });
+</script>
+</body>
+</html>
+
