@@ -30,7 +30,7 @@ const EN = !(navigator.language || 'ja').startsWith('ja');
 const L = (ja, en) => EN ? en : ja;
 document.documentElement.lang = EN ? 'en' : 'ja';
 document.getElementById('status').textContent = L('よみこみ中…', 'Loading…');
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":7219852,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":7221420,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const status = document.getElementById('status');
 const engine = new Engine(GODOT_CONFIG);
 engine.startGame({
@@ -94,6 +94,56 @@ window.shiromeWatch = {
 	off: () => { wOn = false; wState = 'off'; if (wLock) { wLock.release().catch(() => {}); wLock = null; } return 'ok'; },
 	away: () => { const a = wAway; wAway = 0; return a / 1000; },      // Godot が 0.3 秒おきに読む(秒。読んだら 0 に戻す)
 	lock: () => wState,                                                // 検証用: off / held / failed / unsupported
+};
+
+// ---------------- 見守り: 前カメラで「見ている人の顔の位置」だけを取る ----------------
+// ⚠️映像はこのページの中だけで使う。送らない・保存しない・画面にも出さない(video 要素は DOM に入れない)。
+// 顔検出は同じ場所に置いた MediaPipe(./mp/。外部のサーバーからは読まない)。読めない・カメラを断られたときは 'off' = 今までどおり
+let fOn = false, fStream = null, fVideo = null, fDet = null, fPos = 'off', fTimer = 0, fState = 'off';
+const fCan = document.createElement('canvas');                       // 映像を小さく描き写す先(DOM には入れない)
+const fLoop = () => {
+	if (!fOn || !fDet || !fVideo) return;
+	try {
+		if (fVideo.readyState >= 2 && fVideo.videoWidth) {
+			// ⚠️video をそのまま渡すと位置がずれる(headless Chrome で確認)。小さい canvas に描き写してから見つける
+			const W = 320, H = Math.max(1, Math.round(320 * fVideo.videoHeight / fVideo.videoWidth));
+			if (fCan.width !== W || fCan.height !== H) { fCan.width = W; fCan.height = H; }
+			fCan.getContext('2d', { willReadFrequently: true }).drawImage(fVideo, 0, 0, W, H);
+			const r = fDet.detect(fCan);
+			let best = null;
+			for (const d of (r.detections || [])) { const b = d.boundingBox; if (b && (!best || b.width * b.height > best.width * best.height)) best = b; }
+			// いちばん大きい顔の中心を ±1 に(映像の右が +x、下が +y)
+			fPos = best ? (((best.originX + best.width / 2) / W) * 2 - 1).toFixed(3) + ',' + (((best.originY + best.height / 2) / H) * 2 - 1).toFixed(3) : 'none';
+		}
+	} catch (e) {}
+	fTimer = setTimeout(fLoop, 100);
+};
+const fStart = async () => {
+	try {
+		fState = 'loading';
+		if (!fDet) {
+			const mp = await import('./mp/vision_bundle.mjs');
+			const files = await mp.FilesetResolver.forVisionTasks('./mp/wasm');
+			fDet = await mp.FaceDetector.createFromOptions(files, { baseOptions: { modelAssetPath: './mp/blaze_face_short_range.tflite' }, runningMode: 'IMAGE' });
+		}
+		if (!fOn) return;
+		const st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 240 } }, audio: false });
+		if (!fOn) { st.getTracks().forEach(t => t.stop()); return; }
+		fStream = st;
+		fVideo = document.createElement('video');
+		fVideo.muted = true; fVideo.playsInline = true; fVideo.srcObject = st;
+		await fVideo.play();
+		fPos = 'none'; fState = 'on';
+		fLoop();
+	} catch (e) { fState = 'failed'; fPos = 'off'; }
+};
+window.shiromeFace = {
+	on: () => { if (!fOn) { fOn = true; fStart(); } return 'ok'; },
+	off: () => { fOn = false; clearTimeout(fTimer); fPos = 'off'; fState = 'off';
+		if (fStream) { fStream.getTracks().forEach(t => t.stop()); fStream = null; }
+		if (fVideo) { fVideo.srcObject = null; fVideo = null; } return 'ok'; },
+	pos: () => window.__faceFake || fPos,                              // __faceFake は検証用("x,y")
+	state: () => fState,                                               // 検証用: off / loading / on / failed
 };
 
 // 結果画面の「共有」: 画面を撮り直した画像 1 枚を端末の共有シートへ(使えなければ保存)。元写真そのものは出さない
