@@ -8,59 +8,50 @@
 <title>顔芸(試作)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Yusei+Magic&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&display=swap" rel="stylesheet">
 <style>
-  :root { --paper: #f3f0e6; --ink: #1c1c1f; }
+  /* ミーム動画の字幕の作法: 太い白字に黒いふち。色は白と黒だけ */
+  :root { --white: #fff; --black: #000; --display: "Dela Gothic One", "Hiragino Sans", "Noto Sans JP", sans-serif; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; height: 100%; background: #000; color: var(--paper); overflow: hidden;
-    font-family: "Yusei Magic", "Hiragino Maru Gothic ProN", sans-serif; touch-action: manipulation;
+  html, body { margin: 0; height: 100%; background: var(--black); color: var(--white); overflow: hidden;
+    font-family: "Hiragino Sans", "Noto Sans JP", sans-serif; font-weight: 600; touch-action: manipulation;
     -webkit-user-select: none; user-select: none; }
   #gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
   video, #probe { display: none; }
-  .lettering { text-shadow: 0 1px 0 #000, 0 0 6px rgba(0,0,0,.75), 0 0 18px rgba(0,0,0,.45); }
+  .meme { font-family: var(--display); font-weight: 400; color: var(--white); -webkit-text-stroke: 7px var(--black); paint-order: stroke fill; line-height: 1.2; }
 
   #start { position: fixed; inset: 0; display: flex; flex-direction: column; justify-content: flex-end;
-    padding: 0 24px calc(40px + env(safe-area-inset-bottom)); background: var(--ink); }
-  #start h1 { font-weight: 400; font-size: 44px; line-height: 1.25; margin: 0 0 14px; }
-  #start p { font-size: 16px; line-height: 1.8; margin: 0 0 34px; opacity: .82; max-width: 22em; }
-  #go { font: inherit; font-size: 19px; color: var(--ink); background: var(--paper); border: 0;
-    border-radius: 999px; height: 58px; width: 100%; max-width: 340px; }
+    padding: 0 22px calc(36px + env(safe-area-inset-bottom)); }
+  #start h1 { font-family: var(--display); font-weight: 400; font-size: clamp(54px, 17vw, 76px); line-height: 1.08; margin: 0 0 20px; }
+  #start p { font-size: 16px; line-height: 1.75; margin: 0 0 30px; max-width: 21em; }
+  #go { font-family: var(--display); font-size: 21px; color: var(--black); background: var(--white); border: 0;
+    border-radius: 6px; height: 62px; width: 100%; max-width: 360px; transition: transform 120ms ease-out; }
   #go:active { transform: scale(.97); }
   #go[disabled] { opacity: .5; }
-  #msg { min-height: 1.8em; margin-top: 14px; font-size: 14px; opacity: .8; }
+  #msg { min-height: 1.8em; margin-top: 14px; font-size: 14px; }
 
-  #hud { position: fixed; inset: 0; display: none; pointer-events: none; }
-  #hint { position: absolute; left: 20px; right: 20px; top: calc(18px + env(safe-area-inset-top)); font-size: 20px; }
-  #modes { position: absolute; left: 0; right: 0; bottom: calc(22px + env(safe-area-inset-bottom));
-    display: flex; justify-content: center; gap: 6px; pointer-events: auto; }
-  #modes button { font: inherit; font-size: 19px; color: var(--paper); background: none; border: 0;
-    padding: 12px 12px 14px; min-height: 48px; opacity: .62; position: relative; }
-  #modes button[aria-pressed="true"] { opacity: 1; }
-  #modes button[aria-pressed="true"]::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: 6px;
-    height: 3px; border-radius: 2px; background: var(--paper); transform: rotate(-1.2deg); box-shadow: 0 0 6px rgba(0,0,0,.7); }
-  #kdebug { position: absolute; left: 8px; top: 80px; font: 11px/1.4 ui-monospace, monospace; white-space: pre; display: none; }
+  #hud { position: fixed; inset: 0; display: none; pointer-events: none; text-align: center; }
+  #hint { position: absolute; left: 16px; right: 16px; top: calc(20px + env(safe-area-inset-top)); font-size: 26px; -webkit-text-stroke-width: 6px; }
+  #cap { position: absolute; left: 12px; right: 12px; bottom: calc(34px + env(safe-area-inset-bottom)); font-size: clamp(34px, 10.5vw, 46px); white-space: pre-line; }
+  #kdebug { position: absolute; left: 8px; top: 90px; text-align: left; font: 11px/1.35 ui-monospace, monospace; white-space: pre; display: none; text-shadow: 0 0 3px #000, 0 0 3px #000; }
 </style>
 </head>
 <body>
 <canvas id="gl"></canvas>
 <video id="cam" playsinline muted autoplay></video>
-<canvas id="probe" width="96" height="128"></canvas>
+<canvas id="probe" width="144" height="192"></canvas>
 
 <div id="start">
-  <h1>顔で鳴らす</h1>
-  <p>口を開けると、顔がふくらんで音が出ます。映像はこの端末の中だけで使い、どこにも送りません。</p>
+  <h1>顔で<br>鳴らす</h1>
+  <p>眉、口、目、首。顔を動かすと、顔が変な形になって音が出ます。映像はこの端末の中だけで使い、どこにも送りません。</p>
   <button id="go">カメラをつける</button>
   <div id="msg"></div>
 </div>
 
 <div id="hud">
-  <div id="hint" class="lettering"></div>
-  <div id="modes" class="lettering">
-    <button data-mode="0" aria-pressed="true">額ポンプ</button>
-    <button data-mode="1" aria-pressed="false">アコーディオン</button>
-    <button data-mode="2" aria-pressed="false">舌キラキラ</button>
-  </div>
-  <div id="kdebug" class="lettering"></div>
+  <div id="hint" class="meme"></div>
+  <div id="cap" class="meme" aria-live="polite"></div>
+  <div id="kdebug"></div>
 </div>
 <script type="module" src="main.js"></script>
 </body>
