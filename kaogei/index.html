@@ -8,32 +8,44 @@
 <title>顔芸(試作)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@500;700&family=Yomogi&display=swap" rel="stylesheet">
 <style>
-  /* ミーム動画の字幕の作法: 太い白字に黒いふち。色は白と黒だけ */
-  :root { --white: #fff; --black: #000; --display: "Dela Gothic One", "Hiragino Sans", "Noto Sans JP", sans-serif; }
+  /* 海外ミームの作法: 画の上に白い帯、そこに普通の黒い字。飾らない。色は白と黒だけ */
+  :root { --white: #fff; --black: #000; --band: calc(env(safe-area-inset-top) + 92px); }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; height: 100%; background: var(--black); color: var(--white); overflow: hidden;
-    font-family: "Hiragino Sans", "Noto Sans JP", sans-serif; font-weight: 600; touch-action: manipulation;
+  html, body { margin: 0; height: 100%; background: var(--black); color: var(--black); overflow: hidden;
+    font-family: Arial, "Hiragino Sans", "Noto Sans JP", sans-serif; font-weight: 500; touch-action: manipulation;
     -webkit-user-select: none; user-select: none; }
-  #gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #gl { position: fixed; left: 0; right: 0; bottom: 0; top: var(--band); width: 100%; height: calc(100% - var(--band)); display: block; }
+  body.nocap #gl { top: 0; height: 100%; }
   video, #probe { display: none; }
-  .meme { font-family: var(--display); font-weight: 400; color: var(--white); -webkit-text-stroke: 7px var(--black); paint-order: stroke fill; line-height: 1.2; }
+  button { font: inherit; font-weight: 700; color: var(--black); background: var(--white); border: 2px solid var(--black); border-radius: 0; }
+  button:active { background: var(--black); color: var(--white); }
 
-  #start { position: fixed; inset: 0; display: flex; flex-direction: column; justify-content: flex-end;
-    padding: 0 22px calc(36px + env(safe-area-inset-bottom)); }
-  #start h1 { font-family: var(--display); font-weight: 400; font-size: clamp(54px, 17vw, 76px); line-height: 1.08; margin: 0 0 20px; }
-  #start p { font-size: 16px; line-height: 1.75; margin: 0 0 30px; max-width: 21em; }
-  #go { font-family: var(--display); font-size: 21px; color: var(--black); background: var(--white); border: 0;
-    border-radius: 6px; height: 62px; width: 100%; max-width: 360px; transition: transform 120ms ease-out; }
-  #go:active { transform: scale(.97); }
-  #go[disabled] { opacity: .5; }
-  #msg { min-height: 1.8em; margin-top: 14px; font-size: 14px; }
+  #start, #sum { position: fixed; inset: 0; background: var(--white); display: flex; flex-direction: column; justify-content: center;
+    padding: 0 22px calc(24px + env(safe-area-inset-bottom)); }
+  #sum { display: none; }
+  h1, h2 { font-weight: 700; font-size: 34px; line-height: 1.25; margin: 0 0 14px; }
+  #start p, #sum p { font-size: 16px; line-height: 1.7; margin: 0 0 26px; max-width: 22em; }
+  #start button, #sum button { font-size: 19px; height: 58px; width: 100%; max-width: 360px; margin-bottom: 12px; }
+  #start button[disabled] { opacity: .4; }
+  #msg { min-height: 1.7em; font-size: 14px; }
+  #sumList { list-style: none; padding: 0; margin: 0 0 24px; font-size: 17px; line-height: 1.9; }
+  #sumList li { display: flex; justify-content: space-between; max-width: 360px; border-bottom: 1px solid #000; }
 
-  #hud { position: fixed; inset: 0; display: none; pointer-events: none; text-align: center; }
-  #hint { position: absolute; left: 16px; right: 16px; top: calc(20px + env(safe-area-inset-top)); font-size: 26px; -webkit-text-stroke-width: 6px; }
-  #cap { position: absolute; left: 12px; right: 12px; bottom: calc(34px + env(safe-area-inset-bottom)); font-size: clamp(34px, 10.5vw, 46px); white-space: pre-line; }
-  #kdebug { position: absolute; left: 8px; top: 90px; text-align: left; font: 11px/1.35 ui-monospace, monospace; white-space: pre; display: none; text-shadow: 0 0 3px #000, 0 0 3px #000; }
+  #hud { position: fixed; inset: 0; display: none; pointer-events: none; }
+  #band { position: absolute; left: 0; right: 0; top: 0; height: var(--band); background: var(--white); padding: calc(env(safe-area-inset-top) + 10px) 16px 0;
+    display: flex; flex-direction: column; justify-content: center; padding-bottom: 8px; }
+  body.nocap #band { display: none; }
+  /* 帯の字だけ、ペンで雑に書いたような字(?f=g で普通のゴシックに戻せる) */
+  body:not(.gothic) #cap, body:not(.gothic) #sub, body:not(.gothic) h1, body:not(.gothic) h2 { font-family: "Yomogi", Arial, "Hiragino Sans", sans-serif; font-weight: 400; }
+  body:not(.gothic) #cap { font-size: 31px; } body:not(.gothic) #cap.long { font-size: 23px; } #cap.long { font-size: 20px; } body:not(.gothic) #sub { font-size: 17px; } body:not(.gothic) h1, body:not(.gothic) h2 { font-size: 40px; }
+  #cap { font-weight: 700; font-size: 27px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+  #sub { font-size: 15px; line-height: 1.4; min-height: 1.4em; }
+  #meter { position: absolute; left: 0; bottom: 0; height: 6px; width: 100%; background: var(--black); transform-origin: left; transform: scaleX(0); }
+  #bar { position: absolute; left: 12px; right: 12px; bottom: calc(14px + env(safe-area-inset-bottom)); display: flex; justify-content: space-between; pointer-events: auto; }
+  #bar button { font-size: 15px; min-height: 44px; padding: 0 14px; }
+  #kdebug { position: absolute; left: 8px; top: calc(var(--band) + 8px); color: #fff; font: 11px/1.35 ui-monospace, monospace; white-space: pre; display: none; text-shadow: 0 0 3px #000, 0 0 3px #000; }
 </style>
 </head>
 <body>
@@ -42,16 +54,24 @@
 <canvas id="probe" width="144" height="192"></canvas>
 
 <div id="start">
-  <h1>顔で<br>鳴らす</h1>
-  <p>眉、口、目、首。顔を動かすと、顔が変な形になって音が出ます。映像はこの端末の中だけで使い、どこにも送りません。</p>
-  <button id="go">カメラをつける</button>
+  <h1>顔で鳴らす</h1>
+  <p>顔を動かすと、顔が変な形になって音が出ます。映像はこの端末の中だけで使い、どこにも送りません。</p>
+  <button id="go">あそぶ</button>
+  <button id="goPrac">れんしゅうする</button>
   <div id="msg"></div>
 </div>
 
 <div id="hud">
-  <div id="hint" class="meme"></div>
-  <div id="cap" class="meme" aria-live="polite"></div>
+  <div id="band"><div id="cap" aria-live="polite"></div><div id="sub"></div><div id="meter"></div></div>
+  <div id="bar"><button id="bL"></button><button id="bR"></button></div>
   <div id="kdebug"></div>
+</div>
+
+<div id="sum">
+  <h2 id="sumHead"></h2>
+  <ul id="sumList"></ul>
+  <button id="sumFree">あそぶ</button>
+  <button id="sumAgain">もう一回れんしゅうする</button>
 </div>
 <script type="module" src="main.js"></script>
 </body>

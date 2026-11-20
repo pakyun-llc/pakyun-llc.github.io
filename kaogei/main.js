@@ -11,9 +11,12 @@ const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 // きっかけ(顔の動き)ごとに 1 つの型。ぜんぶ同時に効く。tilt と side は左右があるので -1〜1
 const CH = ["open", "brow", "eye", "puck", "smile", "winkL", "winkR", "tilt", "side", "near", "tongue"];
 const NAMES = { open: "アコーディオン", brow: "額ポンプ", eye: "目玉", puck: "吸いこみ", smile: "ほっぺ", winkL: "ねじれ", winkR: "ねじれ", tilt: "ずり落ち", side: "鼻ねじ", near: "むぎゅ", tongue: "舌キラキラ" };
-const TRY = [["brow", "眉を上げる"], ["open", "口を開ける"], ["puck", "口をすぼめる"], ["smile", "にっこり笑う"], ["tilt", "首をかしげる"], ["winkL", "片目をつぶる"], ["eye", "目を見開く"], ["side", "口を横にずらす"], ["tongue", "舌を出す"], ["near", "顔を近づける"]];
+// れんしゅうの順番: [見るきっかけ, やること, 起きること]
+const STEPS = [[["brow"], "眉を上げる", "額ポンプ"], [["open"], "口を大きく開ける", "アコーディオン"], [["puck"], "口をすぼめる", "吸いこみ"], [["smile"], "にっこり笑う", "ほっぺ"],
+  [["eye"], "目を見開く", "目玉"], [["winkL", "winkR"], "片目をつぶる", "ねじれ"], [["tilt"], "首をかしげる", "ずり落ち"], [["side"], "口を横にずらす", "鼻ねじ"],
+  [["near"], "顔を近づける", "むぎゅ"], [["open", "tongue"], "舌を出す", "舌キラキラ"]];
 const zero = () => Object.fromEntries(CH.map((k) => [k, 0]));
-const state = { phase: "start", face: false, t: zero(), v: zero(), slide: [0, 0], fps: 0, pings: 0, err: "", force: null, done: {} };
+const state = { phase: "start", face: false, t: zero(), v: zero(), slide: [0, 0], fps: 0, pings: 0, err: "", force: null, done: {}, mode: "free", only: null, step: 0, results: [] };
 window.__kao = state;
 
 // ---------- 見た目(WebGL) ----------
@@ -282,8 +285,53 @@ function track(now) {
 
 // ---------- まわす ----------
 const vel = zero();
-let prev = performance.now(), frames = 0, fpsT = prev, idleT = 0, tryI = 0, capText = "", hintText = "";
-function setText(id, text, old) { if (text !== old) $(id).textContent = text; return text; }
+let prev = performance.now(), frames = 0, fpsT = prev;
+// ---------- 字と進行 ----------
+const shown = {};
+function put(id, text) { if (shown[id] !== text) { shown[id] = text; $(id).textContent = text; if (id === "cap") $(id).classList.toggle("long", text.length > 10); } }
+let capKey = "", capT = 0, armed = false, holdT = 0, okT = 0, waitT = 0;
+function ui(dt, on) {
+  if (state.mode === "practice") return practice(dt, on);
+  // あそぶ: いちばん強く効いている型を 1 行で(2 つまで)。ちらつかないよう 0.8 秒は保つ
+  const act = CH.filter((k) => Math.abs(state.t[k]) > 0.3 && on).sort((a, b) => Math.abs(state.t[b]) - Math.abs(state.t[a]));
+  const key = [...new Set(act.map((k) => NAMES[k]))].slice(0, 2).join(" と ");
+  capT += dt; if (key !== capKey && (capT > 0.8 || !capKey)) { capKey = key; capT = 0; }
+  put("cap", !on ? "顔を映してください" : capKey || "顔を動かす"); put("sub", "");
+  $("meter").style.transform = "scaleX(0)";
+}
+function practice(dt, on) {
+  const [keys, todo, name] = STEPS[state.step], main = keys[keys.length - 1] === "tongue" ? ["tongue"] : keys;
+  const val = Math.max(...main.map((k) => Math.abs(state.t[k])));
+  if (okT > 0) { okT -= dt; if (okT <= 0) nextStep(true); return; }
+  put("cap", `${state.step + 1}/${STEPS.length}  ${todo}`);
+  waitT += dt; put("sub", !on ? "顔を映してください" : waitT > 6 ? `${name}になる。反応しない時は飛ばしてください` : `${name}になる`);
+  $("meter").style.transform = `scaleX(${on ? clamp(val / 0.5).toFixed(3) : 0})`;
+  if (!on) { holdT = 0; return; }
+  if (val < 0.2) armed = true;                       // いったん戻してから(張り付いた値で勝手に進まないように)
+  holdT = armed && val >= 0.5 ? holdT + dt : 0;
+  if (holdT > 0.3) { okT = 1.3; put("cap", "できた"); put("sub", name); ping(4); setTimeout(() => ping(7), 110); }
+}
+function setStep(i) { state.step = i; state.only = STEPS[i][0]; armed = false; holdT = 0; okT = 0; waitT = 0; }
+function nextStep(ok) {
+  state.results[state.step] = ok;
+  if (state.step + 1 < STEPS.length) return setStep(state.step + 1);
+  // おわり: できたものの一覧
+  const n = state.results.filter(Boolean).length;
+  $("sumHead").textContent = `${n} / ${STEPS.length} できた`;
+  $("sumList").innerHTML = STEPS.map((st, i) => `<li><span>${st[1]}</span><span>${state.results[i] ? "できた" : "飛ばした"}</span></li>`).join("");
+  $("sum").style.display = "flex"; state.only = ["none"];
+}
+function enter(mode) {
+  state.mode = mode; $("sum").style.display = "none"; capKey = ""; state.results = [];
+  if (mode === "practice") { setStep(0); $("bL").textContent = "やめる"; $("bR").textContent = "飛ばす"; document.body.classList.remove("nocap"); }
+  else { state.only = null; $("bL").textContent = "れんしゅう"; capOn(capShown); }
+}
+let capShown = true;
+function capOn(v) { capShown = v; document.body.classList.toggle("nocap", !v && state.mode === "free"); if (state.mode === "free") $("bR").textContent = v ? "字を消す" : "字を出す"; }
+$("bL").addEventListener("click", () => enter(state.mode === "practice" ? "free" : "practice"));
+$("bR").addEventListener("click", () => { if (state.mode === "practice") { if (okT <= 0) nextStep(false); } else capOn(!capShown); });
+$("sumFree").addEventListener("click", () => enter("free"));
+$("sumAgain").addEventListener("click", () => enter("practice"));
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.05, (now - prev) / 1000); prev = now;
@@ -291,6 +339,7 @@ function frame(now) {
   try { track(now); } catch (e) { state.err = String(e).slice(0, 160); }
   if (now - lastSeen > 500) state.face = false;   // 映像が止まった時に鳴りっぱなしにしない
   if (state.force) Object.assign(state.t, zero(), state.force);
+  if (state.only) for (const k of CH) if (!state.only.includes(k)) state.t[k] = 0;   // れんしゅう中は、いまの 1 手だけ効かせる
   // ばね: 行きすぎて戻る(びよん)
   const on = state.face || state.force;
   for (const k of CH) {
@@ -309,27 +358,22 @@ function frame(now) {
   gl.uniform1f(U.uW, pts.w);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   frames++; if (now - fpsT > 1000) { state.fps = frames; frames = 0; fpsT = now; }
-  // 下の字 = いま効いている型(強い順に 3 つまで)。上の字 = まだやっていない動きを 1 つずつ
-  const act = CH.filter((k) => Math.abs(state.t[k]) > 0.3 && on).sort((a, b) => Math.abs(state.t[b]) - Math.abs(state.t[a]));
-  for (const k of act) state.done[k] = true;
-  capText = setText("cap", [...new Set(act.map((k) => NAMES[k]))].slice(0, 3).join("\n"), capText);
-  idleT = act.length ? 0 : idleT + dt;
-  if (idleT > 4) { idleT = 1.5; tryI++; }
-  const left = TRY.filter(([k]) => !state.done[k]), tip = left.length ? left[tryI % left.length][1] : "";
-  hintText = setText("hint", !on ? "顔を映してください" : act.length || idleT < 1.5 ? "" : tip, hintText);
+  ui(dt, on);
   if (params.has("test")) { $("kdebug").style.display = "block";
     $("kdebug").textContent = `fps ${state.fps} face ${state.face}\n` + CH.map((k) => `${k} ${state.t[k].toFixed(2)}`).join("\n") + `\npings ${state.pings}\n${state.err}`; }
 }
 requestAnimationFrame(frame);
 // 字は使う文字だけ先に読んでおく(途中で別の字に化けないように)
-if (document.fonts) document.fonts.load('24px "Dela Gothic One"', Object.values(NAMES).join("") + TRY.map((t) => t[1]).join("") + "顔を映してください").catch(() => {});
+if (params.get("f") === "g") document.body.classList.add("gothic");
+const FACE = params.get("f") === "g" ? '700 24px "Noto Sans JP"' : '24px "Yomogi"';
+if (document.fonts) document.fonts.load(FACE, Object.values(NAMES).join("") + STEPS.map((t) => t[1]).join("") + "顔を映してください動かすできたになる反応しない時は飛ばと").catch(() => {});
 
 async function makeLandmarker(delegate) {
   const files = await FilesetResolver.forVisionTasks(MP);
   return FaceLandmarker.createFromOptions(files, { baseOptions: { modelAssetPath: MODEL, delegate }, runningMode: "VIDEO", numFaces: 1, outputFaceBlendshapes: true });
 }
-$("go").addEventListener("click", async () => {
-  const go = $("go"), msg = $("msg"); go.disabled = true;
+async function start(mode) {
+  const msg = $("msg"); $("go").disabled = $("goPrac").disabled = true;
   try {
     if (!ac) setupAudio();
     ac.resume();   // 音はタップの中で起こす(iOS)
@@ -338,12 +382,14 @@ $("go").addEventListener("click", async () => {
     await video.play();
     msg.textContent = "顔を見つける準備をしています";
     if (!landmarker) { try { landmarker = await makeLandmarker("GPU"); } catch (e) { landmarker = await makeLandmarker("CPU"); } }
-    $("start").style.display = "none"; $("hud").style.display = "block"; state.phase = "live";
+    $("start").style.display = "none"; $("hud").style.display = "block"; enter(mode); state.phase = "live";
   } catch (e) {
-    state.err = String(e).slice(0, 160); go.disabled = false;
+    state.err = String(e).slice(0, 160); $("go").disabled = $("goPrac").disabled = false;
     msg.textContent = e && e.name === "NotAllowedError" ? "カメラが許可されていません。ブラウザの設定で許可してから、もう一度押してください。" : "カメラを使えませんでした。もう一度押してください。";
   }
-});
+}
+$("go").addEventListener("click", () => start("free"));
+$("goPrac").addEventListener("click", () => start("practice"));
 // 別のアプリから戻った時に音が止まったままになることがある(iOS)。画面を触れば戻る
 document.addEventListener("visibilitychange", () => { if (ac) document.hidden ? ac.suspend() : ac.resume(); });
 document.addEventListener("pointerdown", () => { if (ac && ac.state !== "running") ac.resume(); if (state.phase === "live" && video.paused) video.play().catch(() => {}); });
