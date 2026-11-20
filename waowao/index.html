@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>waowao プライバシーポリシー</title>
+<style>
+  :root { --text:#1f2328; --muted:#57606a; --border:#d8dee4; --accent:#e8422e; --bg:#f6f8fa; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Segoe UI",Roboto,sans-serif; color:var(--text); background:var(--bg); line-height:1.8; }
+  .container { max-width:760px; margin:0 auto; padding:48px 20px 80px; background:#fff; min-height:100vh; }
+  h1 { font-size:1.7rem; border-bottom:2px solid var(--accent); padding-bottom:12px; margin-bottom:8px; }
+  .updated { color:var(--muted); font-size:0.9rem; margin-bottom:32px; }
+  h2 { font-size:1.25rem; margin-top:40px; padding-top:24px; border-top:1px solid var(--border); }
+  ul { padding-left:1.4em; } li { margin:6px 0; }
+  table { border-collapse:collapse; width:100%; margin:16px 0; font-size:0.95rem; }
+  th,td { border:1px solid var(--border); padding:10px 12px; text-align:left; } th { background:var(--bg); }
+  .contact { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:16px 20px; margin-top:16px; }
+  footer { color:var(--muted); font-size:0.85rem; margin-top:56px; text-align:center; }
+  a { color:#0969da; }
+</style>
+</head>
+<body>
+<div class="container">
+<h1>waowao プライバシーポリシー</h1>
+<p class="updated">最終更新日: 2026年11月20日 | <a href="./en.html">English</a></p>
+
+<p>「waowao」(以下「本アプリ」)は、Pakyun LLC(以下「開発者」)が提供するアプリです。本アプリにおける利用者情報の取り扱いについて、以下のとおり定めます。</p>
+
+<h2>1. 基本方針 — 開発者はあなたのデータを受け取りません</h2>
+<ul>
+  <li><strong>開発者が運営するサーバーは存在しません。</strong> カメラの映像も、顔から読み取った情報も、撮った動画も、開発者に送信されることはありません。</li>
+  <li>アカウント登録・ログインはありません。</li>
+</ul>
+
+<h2>2. カメラの扱い</h2>
+<ul>
+  <li>前面カメラは、自分の顔を画面に映し、顔の動きに合わせて映像を変形させ、音を鳴らすために使用します。</li>
+  <li>映像の処理は<strong>すべてお使いの端末の中で</strong>行われます。映像を端末の外に送ることはありません。</li>
+  <li>マイクは使用しません。動画に入る音は、本アプリが端末の中で合成した音だけです。</li>
+</ul>
+
+<h2>3. 顔データについて(TrueDepth カメラ / 顔認識)</h2>
+<ul>
+  <li><strong>取得するもの</strong>: 本アプリは、端末の顔認識機能(iOS では ARKit の顔追跡。TrueDepth カメラを使う機種があります)から、顔の部品のおおよその位置(目・鼻・口・あご・額)と、表情の度合いを表す数値(口の開き、眉の上がり、目の開き、口のすぼめ、笑顔、片目のまばたき、口の左右、舌、首の傾き、顔の近さ)を読み取ります。</li>
+  <li><strong>使いみち</strong>: 画面に映す自分の顔を変形させることと、それに合わせて音を鳴らすことだけに使います。本人の識別、顔認証、顔のテンプレートの作成、広告、分析には使いません。</li>
+  <li><strong>保存と共有</strong>: これらの位置や数値は、その瞬間の画面を描くためにメモリ上で使うだけで、<strong>保存しません。端末の外へ送信しません。第三者と共有しません。</strong> 広告 SDK にも渡しません。</li>
+  <li><strong>保持期間</strong>: 次の映像が来るたびに上書きされ、アプリを閉じると残りません。</li>
+</ul>
+
+<h2>4. 録画した動画</h2>
+<ul>
+  <li>録画は、利用者が録画の操作をした時、または「3コマ」を始めた時にだけ行います。録画中は画面に赤い印が出ます。</li>
+  <li>録画した動画(変形後の映像と合成した音)は、まず端末内の一時的な場所に置かれます。利用者が「保存」を選ぶと端末の写真ライブラリに保存され、「共有」を選ぶと利用者が選んだ先に渡されます。どちらも選ばずに画面を離れると、一時ファイルは削除されます。</li>
+  <li>写真ライブラリへのアクセスは「追加のみ」で、保存済みの写真や動画を本アプリが読むことはありません。</li>
+</ul>
+
+<h2>5. 広告について</h2>
+<p>本アプリは広告表示のために Google AdMob を使用しています。AdMob は広告配信のため、以下の情報を取得することがあります。</p>
+<table>
+  <tr><th>情報</th><th>目的</th></tr>
+  <tr><td>広告識別子(iOS: IDFA ※トラッキング許可時のみ / Android: 広告 ID ※端末の設定でリセット・削除できます)</td><td>広告のパーソナライズ・効果測定</td></tr>
+  <tr><td>IPアドレス・おおよその位置情報</td><td>地域に応じた広告配信</td></tr>
+  <tr><td>端末情報(機種・OSバージョン等)</td><td>広告の表示最適化・不正防止</td></tr>
+</table>
+<ul>
+  <li><strong>カメラの映像や顔データを、広告の配信やターゲティングに使用することはありません。</strong></li>
+  <li>トラッキングの許可はiOSのダイアログでいつでも拒否・変更できます(設定 &gt; プライバシーとセキュリティ &gt; トラッキング)。拒否しても本アプリの全機能を利用できます。</li>
+  <li>Googleによるデータの取り扱いは <a href="https://policies.google.com/technologies/partner-sites" target="_blank" rel="noopener">Googleのポリシーと規約</a> をご確認ください。</li>
+</ul>
+
+<h2>6. データの削除</h2>
+<p>本アプリのデータはすべて端末内にあります。アプリを削除すると、保存された設定はすべて削除されます。写真ライブラリに保存した動画は、写真アプリから削除できます。</p>
+
+<h2>7. お問い合わせ</h2>
+<div class="contact">
+  <p>本ポリシーに関するお問い合わせは、以下までお願いします。</p>
+  <p>開発者: Pakyun LLC<br>メール: info@pakyun.net</p>
+</div>
+
+<h2>8. 改定</h2>
+<p>本ポリシーは必要に応じて改定されることがあります。重要な変更がある場合は、本ページにて告知します。</p>
+
+<footer>© 2026 Pakyun LLC. All rights reserved.</footer>
+</div>
+</body>
+</html>
