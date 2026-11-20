@@ -10,11 +10,23 @@ const params = new URLSearchParams(location.search);
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 // きっかけ(顔の動き)ごとに 1 つの型。ぜんぶ同時に効く。tilt と side は左右があるので -1〜1
 const CH = ["open", "brow", "eye", "puck", "smile", "winkL", "winkR", "tilt", "side", "near", "tongue"];
-const NAMES = { open: "アコーディオン", brow: "デコポンプ", eye: "めだま", puck: "すいこみ", smile: "ほっぺ", winkL: "ねじれ", winkR: "ねじれ", tilt: "ずりおち", side: "はなねじ", near: "むぎゅ", tongue: "ベロキラキラ" };
+// ことば: 日本語(ひらがな)と英語。?lang=en / ?lang=ja で切り替え、なければ端末の言語
+const EN = (params.get("lang") || navigator.language || "ja").toLowerCase().startsWith("en");
+document.documentElement.lang = EN ? "en" : "ja";
+const NAMES = EN
+  ? { open: "accordion", brow: "forehead pump", eye: "big eyes", puck: "slurp", smile: "cheeks", winkL: "twist", winkR: "twist", tilt: "slide", side: "nose twist", near: "squish", tongue: "sparkle tongue" }
+  : { open: "アコーディオン", brow: "デコポンプ", eye: "めだま", puck: "すいこみ", smile: "ほっぺ", winkL: "ねじれ", winkR: "ねじれ", tilt: "ずりおち", side: "はなねじ", near: "むぎゅ", tongue: "ベロキラキラ" };
 // れんしゅうの順番: [見るきっかけ, やること, 起きること]
-const STEPS = [[["brow"], "まゆを あげる", "デコポンプ"], [["open"], "くちを あける", "アコーディオン"], [["puck"], "くちを すぼめる", "すいこみ"], [["smile"], "にっこり わらう", "ほっぺ"],
-  [["eye"], "めを みひらく", "めだま"], [["winkL", "winkR"], "かためを つぶる", "ねじれ"], [["tilt"], "くびを かしげる", "ずりおち"], [["side"], "くちを よこに ずらす", "はなねじ"],
-  [["near"], "かおを ちかづける", "むぎゅ"], [["open", "tongue"], "ベロを だす", "ベロキラキラ"]];
+const TODO = EN ? ["raise your eyebrows", "open wide", "pucker up", "big smile", "open your eyes wide", "wink", "tilt your head", "move your mouth sideways", "come closer", "stick out your tongue"]
+  : ["まゆを あげる", "くちを あける", "くちを すぼめる", "にっこり わらう", "めを みひらく", "かためを つぶる", "くびを かしげる", "くちを よこに ずらす", "かおを ちかづける", "ベロを だす"];
+const STEPS = [["brow"], ["open"], ["puck"], ["smile"], ["eye"], ["winkL", "winkR"], ["tilt"], ["side"], ["near"], ["open", "tongue"]].map((keys, i) => [keys, TODO[i], NAMES[keys[keys.length - 1]]]);
+const W = EN ? { and: " + ", show: "show your face", move: "move your face", becomes: (n) => "→ " + n, stuck: (n) => `→ ${n}. not working? skip it`, nice: "nice", panels: "3 panels", first: "first: ", panel: (k) => `${k}/3 `, ofPanels: (n) => `${n} of 3 panels`, done: (n, m) => `${n} of ${m}`, skipped: "skipped",
+    play: "play", practice: "practice", game: "3 panels", quit: "quit", skip: "skip", start: "go", shuffle: "shuffle", hide: "hide", unhide: "show", again: "again",
+    about: "Move your face. It bends and makes sounds. Video stays on this device and is never sent anywhere.", cam: "starting the camera", prep: "getting ready to find your face", denied: "Camera access is off. Allow it in your browser settings, then tap again.", fail: "Couldn't use the camera. Tap again." }
+  : { and: " と ", show: "かおを うつして", move: "かおを うごかす", becomes: (n) => n + "に なる", stuck: (n) => `${n}に なる。だめなら とばす`, nice: "できた", panels: "3コマ", first: "まずは ", panel: (k) => `${k}コマめ `, ofPanels: (n) => `3コマちゅう ${n}コマ`, done: (n, m) => `${n} / ${m} できた`, skipped: "とばした",
+    play: "あそぶ", practice: "れんしゅう", game: "3コマ", quit: "やめる", skip: "とばす", start: "はじめる", shuffle: "かえる", hide: "じを けす", unhide: "じを だす", again: "もういっかい",
+    about: "顔を動かすと、顔が変な形になって音が出ます。映像はこの端末の中だけで使い、どこにも送りません。", cam: "カメラを起こしています", prep: "顔を見つける準備をしています", denied: "カメラが許可されていません。ブラウザの設定で許可してから、もう一度押してください。", fail: "カメラを使えませんでした。もう一度押してください。" };
+for (const [id, k] of [["go", "play"], ["goPrac", "practice"], ["goGame", "game"], ["sumFree", "play"], ["sumAgain", "again"], ["about", "about"]]) $(id).textContent = W[k];
 const zero = () => Object.fromEntries(CH.map((k) => [k, 0]));
 const state = { phase: "start", face: false, t: zero(), v: zero(), slide: [0, 0], fps: 0, pings: 0, err: "", force: null, done: {}, mode: "free", only: null, step: 0, results: [] };
 window.__kao = state;
@@ -288,16 +300,16 @@ const vel = zero();
 let prev = performance.now(), frames = 0, fpsT = prev;
 // ---------- 字と進行 ----------
 const shown = {};
-function put(id, text) { if (shown[id] !== text) { shown[id] = text; $(id).textContent = text; if (id === "cap") $(id).classList.toggle("long", text.length > 9); } }
+function put(id, text) { if (shown[id] !== text) { shown[id] = text; $(id).textContent = text; if (id === "cap") $(id).classList.toggle("long", text.length > (EN ? 16 : 9)); } }
 let capKey = "", capT = 0, armed = false, holdT = 0, okT = 0, waitT = 0;
 function ui(dt, on) {
   if (state.mode === "practice") return practice(dt, on);
   if (state.mode === "game") return game(dt, on);
   // あそぶ: いちばん強く効いている型を 1 行で(2 つまで)。ちらつかないよう 0.8 秒は保つ
   const act = CH.filter((k) => Math.abs(state.t[k]) > 0.3 && on).sort((a, b) => Math.abs(state.t[b]) - Math.abs(state.t[a]));
-  const key = [...new Set(act.map((k) => NAMES[k]))].slice(0, 2).join(" と ");
+  const key = [...new Set(act.map((k) => NAMES[k]))].slice(0, 2).join(W.and);
   capT += dt; if (key !== capKey && (capT > 0.8 || !capKey)) { capKey = key; capT = 0; }
-  put("cap", !on ? "かおを うつして" : capKey || "かおを うごかす"); put("sub", "");
+  put("cap", !on ? W.show : capKey || W.move); put("sub", "");
   $("meter").style.transform = "scaleX(0)";
 }
 function practice(dt, on) {
@@ -305,12 +317,12 @@ function practice(dt, on) {
   const val = Math.max(...main.map((k) => Math.abs(state.t[k])));
   if (okT > 0) { okT -= dt; if (okT <= 0) nextStep(true); return; }
   put("cap", `${state.step + 1}/${STEPS.length}  ${todo}`);
-  waitT += dt; put("sub", !on ? "かおを うつして" : waitT > 6 ? `${name}に なる。だめなら とばす` : `${name}に なる`);
+  waitT += dt; put("sub", !on ? W.show : waitT > 6 ? W.stuck(name) : W.becomes(name));
   $("meter").style.transform = `scaleX(${on ? clamp(val / 0.5).toFixed(3) : 0})`;
   if (!on) { holdT = 0; return; }
   if (val < 0.2) armed = true;                       // いったん戻してから(張り付いた値で勝手に進まないように)
   holdT = armed && val >= 0.5 ? holdT + dt : 0;
-  if (holdT > 0.3) { okT = 1.3; put("cap", "できた"); put("sub", name); ping(4); setTimeout(() => ping(7), 110); }
+  if (holdT > 0.3) { okT = 1.3; put("cap", W.nice); put("sub", name); ping(4); setTimeout(() => ping(7), 110); }
 }
 // ---------- 3コマ: 3 つの動きを 5 秒ずつ。前のコマの変形は残るので、だんだん変になる。反応しなくても 15 秒で必ず終わる
 const POOL = [[0, 4, 3, 5, 7], [6, 2, 3, 0], [1, 8, 2]];   // 1 コマ目は小さい動き、3 コマ目は大きい動き(オチ)。舌は判定が怪しいので入れない
@@ -323,10 +335,10 @@ function gamePre() { G.phase = "pre"; G.t = 0; G.koma = -1; G.hits = []; state.o
 function game(dt, on) {
   const todo = (k) => STEPS[G.moves[k]][1];
   $("meter").style.transform = "scaleX(0)";
-  if (G.phase === "pre") { put("cap", "3コマ"); put("sub", G.moves.map((_, k) => todo(k)).join(" → ")); return; }
+  if (G.phase === "pre") { put("cap", W.panels); put("sub", G.moves.map((_, k) => todo(k)).join(" → ")); return; }
   G.t += dt;
   if (G.phase === "count") {
-    const n = 3 - Math.floor(G.t); if (n <= 0) { G.phase = "play"; G.t = 0; } else { if (shown.cap !== String(n)) blip(440); put("cap", String(n)); put("sub", "まずは " + todo(0)); return; }
+    const n = 3 - Math.floor(G.t); if (n <= 0) { G.phase = "play"; G.t = 0; } else { if (shown.cap !== String(n)) blip(440); put("cap", String(n)); put("sub", W.first + todo(0)); return; }
   }
   if (G.phase !== "play") return;
   const k = Math.floor(G.t / 5);
@@ -335,14 +347,14 @@ function game(dt, on) {
   const val = Math.max(...G.keys[k].map((key) => Math.abs(state.t[key])));
   G.hold = on && val >= 0.5 ? G.hold + dt : 0;
   if (!G.hits[k] && G.hold > 0.2) { G.hits[k] = true; ping(3 + k * 2); setTimeout(() => ping(6 + k * 2), 110); }
-  put("cap", `${k + 1}コマめ ${todo(k)}` + (G.hits[k] ? " ○" : "")); put("sub", !on ? "かおを うつして" : STEPS[G.moves[k]][2] + "に なる");
+  put("cap", W.panel(k + 1) + todo(k) + (G.hits[k] ? " ○" : "")); put("sub", !on ? W.show : W.becomes(STEPS[G.moves[k]][2]));
   $("meter").style.transform = `scaleX(${(1 - (G.t % 5) / 5).toFixed(3)})`;
 }
 function gameEnd() {
   G.phase = "end"; state.only = ["none"];
-  $("sumHead").textContent = `3コマちゅう ${G.hits.filter(Boolean).length}コマ`;
-  $("sumList").innerHTML = G.moves.map((i, k) => `<li><span>${k + 1}コマめ ${STEPS[i][1]}</span><span>${G.hits[k] ? "○" : "×"}</span></li>`).join("");
-  $("sumAgain").textContent = "もういっかい"; $("sum").style.display = "flex";
+  $("sumHead").textContent = W.ofPanels(G.hits.filter(Boolean).length);
+  $("sumList").innerHTML = G.moves.map((i, k) => `<li><span>${W.panel(k + 1)}${STEPS[i][1]}</span><span>${G.hits[k] ? "○" : "×"}</span></li>`).join("");
+  $("sum").style.display = "flex";
 }
 function setStep(i) { state.step = i; state.only = STEPS[i][0]; armed = false; holdT = 0; okT = 0; waitT = 0; }
 function nextStep(ok) {
@@ -350,18 +362,18 @@ function nextStep(ok) {
   if (state.step + 1 < STEPS.length) return setStep(state.step + 1);
   // おわり: できたものの一覧
   const n = state.results.filter(Boolean).length;
-  $("sumHead").textContent = `${n} / ${STEPS.length} できた`;
-  $("sumList").innerHTML = STEPS.map((st, i) => `<li><span>${st[1]}</span><span>${state.results[i] ? "○" : "とばした"}</span></li>`).join("");
+  $("sumHead").textContent = W.done(n, STEPS.length);
+  $("sumList").innerHTML = STEPS.map((st, i) => `<li><span>${st[1]}</span><span>${state.results[i] ? "○" : W.skipped}</span></li>`).join("");
   $("sum").style.display = "flex"; state.only = ["none"];
 }
 function enter(mode) {
   state.mode = mode; $("sum").style.display = "none"; capKey = ""; state.results = []; $("bM").style.visibility = $("bR").style.visibility = "visible";
-  if (mode === "practice") { setStep(0); $("bL").textContent = "やめる"; $("bM").style.visibility = "hidden"; $("bR").textContent = "とばす"; $("sumAgain").textContent = "もういっかい"; document.body.classList.remove("nocap"); }
-  else if (mode === "game") { pickMoves(); gamePre(); $("bL").textContent = "やめる"; $("bM").textContent = "はじめる"; $("bR").textContent = "かえる"; document.body.classList.remove("nocap"); }
-  else { state.only = null; $("bL").textContent = "れんしゅう"; $("bM").textContent = "3コマ"; capOn(capShown); }
+  if (mode === "practice") { setStep(0); $("bL").textContent = W.quit; $("bM").style.visibility = "hidden"; $("bR").textContent = W.skip; document.body.classList.remove("nocap"); }
+  else if (mode === "game") { pickMoves(); gamePre(); $("bL").textContent = W.quit; $("bM").textContent = W.start; $("bR").textContent = W.shuffle; document.body.classList.remove("nocap"); }
+  else { state.only = null; $("bL").textContent = W.practice; $("bM").textContent = W.game; capOn(capShown); }
 }
 let capShown = true;
-function capOn(v) { capShown = v; document.body.classList.toggle("nocap", !v && state.mode === "free"); if (state.mode === "free") $("bR").textContent = v ? "じを けす" : "じを だす"; }
+function capOn(v) { capShown = v; document.body.classList.toggle("nocap", !v && state.mode === "free"); if (state.mode === "free") $("bR").textContent = v ? W.hide : W.unhide; }
 $("bL").addEventListener("click", () => enter(state.mode === "free" ? "practice" : "free"));
 $("bM").addEventListener("click", () => { if (state.mode === "free") enter("game"); else if (state.mode === "game" && G.phase === "pre") { G.phase = "count"; G.t = 0; $("bM").style.visibility = $("bR").style.visibility = "hidden"; } });
 $("bR").addEventListener("click", () => { if (state.mode === "practice") { if (okT <= 0) nextStep(false); } else if (state.mode === "game") { if (G.phase === "pre") pickMoves(); } else capOn(!capShown); });
@@ -399,10 +411,10 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 // 字は使う文字だけ先に読んでおく(途中で別の字に化けないように)
-const FV = ["k", "y"].includes(params.get("f")) ? params.get("f") : "s";
+const FV = ["k", "y", "h"].includes(params.get("f")) ? params.get("f") : "s";
 document.body.classList.add("f" + FV);
-const FACE = { s: '24px "Slackside One"', k: '24px "Zen Kurenaido"', y: '24px "Yomogi"' }[FV];
-if (document.fonts) document.fonts.load(FACE, Object.values(NAMES).join("") + STEPS.map((t) => t[1]).join("") + "かおをうつしてごだめならとばすできたになるまずは3コマめちゅう0123456789/→○×").catch(() => {});
+const FACE = { s: '24px "Slackside One"', k: '24px "Zen Kurenaido"', y: '24px "Yomogi"', h: '24px "Hachi Maru Pop"' }[FV];
+if (document.fonts) document.fonts.load(FACE, Object.values(NAMES).join("") + STEPS.map((t) => t[1]).join("") + Object.values(W).filter((v) => typeof v === "string").join("") + "0123456789/→○×になるコマめちゅうできた").catch(() => {});
 
 async function makeLandmarker(delegate) {
   const files = await FilesetResolver.forVisionTasks(MP);
@@ -413,15 +425,15 @@ async function start(mode) {
   try {
     if (!ac) setupAudio();
     ac.resume();   // 音はタップの中で起こす(iOS)
-    msg.textContent = "カメラを起こしています";
+    msg.textContent = W.cam;
     if (!video.srcObject) video.srcObject = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } } });
     await video.play();
-    msg.textContent = "顔を見つける準備をしています";
+    msg.textContent = W.prep;
     if (!landmarker) { try { landmarker = await makeLandmarker("GPU"); } catch (e) { landmarker = await makeLandmarker("CPU"); } }
     $("start").style.display = "none"; $("hud").style.display = "block"; enter(mode); state.phase = "live";
   } catch (e) {
     state.err = String(e).slice(0, 160); $("go").disabled = $("goPrac").disabled = $("goGame").disabled = false;
-    msg.textContent = e && e.name === "NotAllowedError" ? "カメラが許可されていません。ブラウザの設定で許可してから、もう一度押してください。" : "カメラを使えませんでした。もう一度押してください。";
+    msg.textContent = e && e.name === "NotAllowedError" ? W.denied : W.fail;
   }
 }
 $("go").addEventListener("click", () => start("free"));
