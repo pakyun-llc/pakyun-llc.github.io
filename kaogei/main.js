@@ -10,11 +10,11 @@ const params = new URLSearchParams(location.search);
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 // きっかけ(顔の動き)ごとに 1 つの型。ぜんぶ同時に効く。tilt と side は左右があるので -1〜1
 const CH = ["open", "brow", "eye", "puck", "smile", "winkL", "winkR", "tilt", "side", "near", "tongue"];
-const NAMES = { open: "アコーディオン", brow: "額ポンプ", eye: "目玉", puck: "吸いこみ", smile: "ほっぺ", winkL: "ねじれ", winkR: "ねじれ", tilt: "ずり落ち", side: "鼻ねじ", near: "むぎゅ", tongue: "舌キラキラ" };
+const NAMES = { open: "アコーディオン", brow: "デコポンプ", eye: "めだま", puck: "すいこみ", smile: "ほっぺ", winkL: "ねじれ", winkR: "ねじれ", tilt: "ずりおち", side: "はなねじ", near: "むぎゅ", tongue: "ベロキラキラ" };
 // れんしゅうの順番: [見るきっかけ, やること, 起きること]
-const STEPS = [[["brow"], "眉を上げる", "額ポンプ"], [["open"], "口を大きく開ける", "アコーディオン"], [["puck"], "口をすぼめる", "吸いこみ"], [["smile"], "にっこり笑う", "ほっぺ"],
-  [["eye"], "目を見開く", "目玉"], [["winkL", "winkR"], "片目をつぶる", "ねじれ"], [["tilt"], "首をかしげる", "ずり落ち"], [["side"], "口を横にずらす", "鼻ねじ"],
-  [["near"], "顔を近づける", "むぎゅ"], [["open", "tongue"], "舌を出す", "舌キラキラ"]];
+const STEPS = [[["brow"], "まゆを あげる", "デコポンプ"], [["open"], "くちを あける", "アコーディオン"], [["puck"], "くちを すぼめる", "すいこみ"], [["smile"], "にっこり わらう", "ほっぺ"],
+  [["eye"], "めを みひらく", "めだま"], [["winkL", "winkR"], "かためを つぶる", "ねじれ"], [["tilt"], "くびを かしげる", "ずりおち"], [["side"], "くちを よこに ずらす", "はなねじ"],
+  [["near"], "かおを ちかづける", "むぎゅ"], [["open", "tongue"], "ベロを だす", "ベロキラキラ"]];
 const zero = () => Object.fromEntries(CH.map((k) => [k, 0]));
 const state = { phase: "start", face: false, t: zero(), v: zero(), slide: [0, 0], fps: 0, pings: 0, err: "", force: null, done: {}, mode: "free", only: null, step: 0, results: [] };
 window.__kao = state;
@@ -288,15 +288,24 @@ const vel = zero();
 let prev = performance.now(), frames = 0, fpsT = prev;
 // ---------- 字と進行 ----------
 const shown = {};
-function put(id, text) { if (shown[id] !== text) { shown[id] = text; $(id).textContent = text; if (id === "cap") $(id).classList.toggle("long", text.length > 10); } }
+const calm = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+const wob = (el) => { el.style.transform = `translate(${(Math.random() * 3 - 1.5).toFixed(1)}px, ${(Math.random() * 7 - 3.5).toFixed(1)}px) rotate(${(Math.random() * 14 - 7).toFixed(1)}deg) scale(${(0.92 + Math.random() * 0.18).toFixed(2)})`; };
+function put(id, text) {
+  if (shown[id] === text) return; shown[id] = text; const el = $(id);
+  if (id !== "cap") { el.textContent = text; return; }
+  el.classList.toggle("long", text.length > 9); el.textContent = "";
+  for (const ch of text) { const sp = document.createElement("span"); sp.textContent = ch; wob(sp); el.appendChild(sp); }   // 1 文字ずつ、雑に
+}
+if (!calm) setInterval(() => { if (state.phase === "live") for (const sp of $("cap").children) wob(sp); }, 220);
 let capKey = "", capT = 0, armed = false, holdT = 0, okT = 0, waitT = 0;
 function ui(dt, on) {
   if (state.mode === "practice") return practice(dt, on);
+  if (state.mode === "game") return game(dt, on);
   // あそぶ: いちばん強く効いている型を 1 行で(2 つまで)。ちらつかないよう 0.8 秒は保つ
   const act = CH.filter((k) => Math.abs(state.t[k]) > 0.3 && on).sort((a, b) => Math.abs(state.t[b]) - Math.abs(state.t[a]));
   const key = [...new Set(act.map((k) => NAMES[k]))].slice(0, 2).join(" と ");
   capT += dt; if (key !== capKey && (capT > 0.8 || !capKey)) { capKey = key; capT = 0; }
-  put("cap", !on ? "顔を映してください" : capKey || "顔を動かす"); put("sub", "");
+  put("cap", !on ? "かおを うつして" : capKey || "かおを うごかす"); put("sub", "");
   $("meter").style.transform = "scaleX(0)";
 }
 function practice(dt, on) {
@@ -304,12 +313,44 @@ function practice(dt, on) {
   const val = Math.max(...main.map((k) => Math.abs(state.t[k])));
   if (okT > 0) { okT -= dt; if (okT <= 0) nextStep(true); return; }
   put("cap", `${state.step + 1}/${STEPS.length}  ${todo}`);
-  waitT += dt; put("sub", !on ? "顔を映してください" : waitT > 6 ? `${name}になる。反応しない時は飛ばしてください` : `${name}になる`);
+  waitT += dt; put("sub", !on ? "かおを うつして" : waitT > 6 ? `${name}に なる。だめなら とばす` : `${name}に なる`);
   $("meter").style.transform = `scaleX(${on ? clamp(val / 0.5).toFixed(3) : 0})`;
   if (!on) { holdT = 0; return; }
   if (val < 0.2) armed = true;                       // いったん戻してから(張り付いた値で勝手に進まないように)
   holdT = armed && val >= 0.5 ? holdT + dt : 0;
   if (holdT > 0.3) { okT = 1.3; put("cap", "できた"); put("sub", name); ping(4); setTimeout(() => ping(7), 110); }
+}
+// ---------- 3コマ: 3 つの動きを 5 秒ずつ。前のコマの変形は残るので、だんだん変になる。反応しなくても 15 秒で必ず終わる
+const POOL = [[0, 4, 3, 5, 7], [6, 2, 3, 0], [1, 8, 2]];   // 1 コマ目は小さい動き、3 コマ目は大きい動き(オチ)。舌は判定が怪しいので入れない
+const G = state.game = { moves: [], keys: [], phase: "pre", t: 0, koma: -1, hits: [], hold: 0 };
+function pickMoves() {
+  const m = []; for (const pool of POOL) { const c = pool.filter((i) => !m.includes(i) && !(G.moves.includes(i) && pool.length > 2)); m.push(c[Math.floor(Math.random() * c.length)]); }
+  G.moves = m; G.keys = m.map((i) => STEPS[i][0]);
+}
+function gamePre() { G.phase = "pre"; G.t = 0; G.koma = -1; G.hits = []; state.only = null; $("bM").style.visibility = $("bR").style.visibility = "visible"; $("sum").style.display = "none"; }
+function game(dt, on) {
+  const todo = (k) => STEPS[G.moves[k]][1];
+  $("meter").style.transform = "scaleX(0)";
+  if (G.phase === "pre") { put("cap", "3コマ"); put("sub", G.moves.map((_, k) => todo(k)).join(" → ")); return; }
+  G.t += dt;
+  if (G.phase === "count") {
+    const n = 3 - Math.floor(G.t); if (n <= 0) { G.phase = "play"; G.t = 0; } else { if (shown.cap !== String(n)) blip(440); put("cap", String(n)); put("sub", "まずは " + todo(0)); return; }
+  }
+  if (G.phase !== "play") return;
+  const k = Math.floor(G.t / 5);
+  if (k >= 3) return gameEnd();
+  if (k !== G.koma) { G.koma = k; G.hold = 0; blip(k === 2 ? 880 : 660); state.only = G.keys.slice(0, k + 1).flat(); }
+  const val = Math.max(...G.keys[k].map((key) => Math.abs(state.t[key])));
+  G.hold = on && val >= 0.5 ? G.hold + dt : 0;
+  if (!G.hits[k] && G.hold > 0.2) { G.hits[k] = true; ping(3 + k * 2); setTimeout(() => ping(6 + k * 2), 110); }
+  put("cap", `${k + 1}コマめ ${todo(k)}` + (G.hits[k] ? " ○" : "")); put("sub", !on ? "かおを うつして" : STEPS[G.moves[k]][2] + "に なる");
+  $("meter").style.transform = `scaleX(${(1 - (G.t % 5) / 5).toFixed(3)})`;
+}
+function gameEnd() {
+  G.phase = "end"; state.only = ["none"];
+  $("sumHead").textContent = `3コマちゅう ${G.hits.filter(Boolean).length}コマ`;
+  $("sumList").innerHTML = G.moves.map((i, k) => `<li><span>${k + 1}コマめ ${STEPS[i][1]}</span><span>${G.hits[k] ? "○" : "×"}</span></li>`).join("");
+  $("sumAgain").textContent = "もういっかい"; $("sum").style.display = "flex";
 }
 function setStep(i) { state.step = i; state.only = STEPS[i][0]; armed = false; holdT = 0; okT = 0; waitT = 0; }
 function nextStep(ok) {
@@ -318,20 +359,22 @@ function nextStep(ok) {
   // おわり: できたものの一覧
   const n = state.results.filter(Boolean).length;
   $("sumHead").textContent = `${n} / ${STEPS.length} できた`;
-  $("sumList").innerHTML = STEPS.map((st, i) => `<li><span>${st[1]}</span><span>${state.results[i] ? "できた" : "飛ばした"}</span></li>`).join("");
+  $("sumList").innerHTML = STEPS.map((st, i) => `<li><span>${st[1]}</span><span>${state.results[i] ? "○" : "とばした"}</span></li>`).join("");
   $("sum").style.display = "flex"; state.only = ["none"];
 }
 function enter(mode) {
-  state.mode = mode; $("sum").style.display = "none"; capKey = ""; state.results = [];
-  if (mode === "practice") { setStep(0); $("bL").textContent = "やめる"; $("bR").textContent = "飛ばす"; document.body.classList.remove("nocap"); }
-  else { state.only = null; $("bL").textContent = "れんしゅう"; capOn(capShown); }
+  state.mode = mode; $("sum").style.display = "none"; capKey = ""; state.results = []; $("bM").style.visibility = $("bR").style.visibility = "visible";
+  if (mode === "practice") { setStep(0); $("bL").textContent = "やめる"; $("bM").style.visibility = "hidden"; $("bR").textContent = "とばす"; $("sumAgain").textContent = "もういっかい"; document.body.classList.remove("nocap"); }
+  else if (mode === "game") { pickMoves(); gamePre(); $("bL").textContent = "やめる"; $("bM").textContent = "はじめる"; $("bR").textContent = "かえる"; document.body.classList.remove("nocap"); }
+  else { state.only = null; $("bL").textContent = "れんしゅう"; $("bM").textContent = "3コマ"; capOn(capShown); }
 }
 let capShown = true;
-function capOn(v) { capShown = v; document.body.classList.toggle("nocap", !v && state.mode === "free"); if (state.mode === "free") $("bR").textContent = v ? "字を消す" : "字を出す"; }
-$("bL").addEventListener("click", () => enter(state.mode === "practice" ? "free" : "practice"));
-$("bR").addEventListener("click", () => { if (state.mode === "practice") { if (okT <= 0) nextStep(false); } else capOn(!capShown); });
+function capOn(v) { capShown = v; document.body.classList.toggle("nocap", !v && state.mode === "free"); if (state.mode === "free") $("bR").textContent = v ? "じを けす" : "じを だす"; }
+$("bL").addEventListener("click", () => enter(state.mode === "free" ? "practice" : "free"));
+$("bM").addEventListener("click", () => { if (state.mode === "free") enter("game"); else if (state.mode === "game" && G.phase === "pre") { G.phase = "count"; G.t = 0; $("bM").style.visibility = $("bR").style.visibility = "hidden"; } });
+$("bR").addEventListener("click", () => { if (state.mode === "practice") { if (okT <= 0) nextStep(false); } else if (state.mode === "game") { if (G.phase === "pre") pickMoves(); } else capOn(!capShown); });
 $("sumFree").addEventListener("click", () => enter("free"));
-$("sumAgain").addEventListener("click", () => enter("practice"));
+$("sumAgain").addEventListener("click", () => { if (state.mode === "game") gamePre(); else enter("practice"); });
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.05, (now - prev) / 1000); prev = now;
@@ -364,16 +407,17 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 // 字は使う文字だけ先に読んでおく(途中で別の字に化けないように)
-if (params.get("f") === "g") document.body.classList.add("gothic");
-const FACE = params.get("f") === "g" ? '700 24px "Noto Sans JP"' : '24px "Yomogi"';
-if (document.fonts) document.fonts.load(FACE, Object.values(NAMES).join("") + STEPS.map((t) => t[1]).join("") + "顔を映してください動かすできたになる反応しない時は飛ばと").catch(() => {});
+const FV = ["a", "b", "c"].includes(params.get("f")) ? params.get("f") : "b";
+document.body.classList.add("f" + FV);
+const FACE = { a: '24px "Slackside One"', b: '24px "Darumadrop One"', c: '24px "Yomogi"' }[FV];
+if (document.fonts) document.fonts.load(FACE, Object.values(NAMES).join("") + STEPS.map((t) => t[1]).join("") + "かおをうつしてごだめならとばすできたになるまずは3コマめちゅう0123456789/→○×").catch(() => {});
 
 async function makeLandmarker(delegate) {
   const files = await FilesetResolver.forVisionTasks(MP);
   return FaceLandmarker.createFromOptions(files, { baseOptions: { modelAssetPath: MODEL, delegate }, runningMode: "VIDEO", numFaces: 1, outputFaceBlendshapes: true });
 }
 async function start(mode) {
-  const msg = $("msg"); $("go").disabled = $("goPrac").disabled = true;
+  const msg = $("msg"); $("go").disabled = $("goPrac").disabled = $("goGame").disabled = true;
   try {
     if (!ac) setupAudio();
     ac.resume();   // 音はタップの中で起こす(iOS)
@@ -384,12 +428,13 @@ async function start(mode) {
     if (!landmarker) { try { landmarker = await makeLandmarker("GPU"); } catch (e) { landmarker = await makeLandmarker("CPU"); } }
     $("start").style.display = "none"; $("hud").style.display = "block"; enter(mode); state.phase = "live";
   } catch (e) {
-    state.err = String(e).slice(0, 160); $("go").disabled = $("goPrac").disabled = false;
+    state.err = String(e).slice(0, 160); $("go").disabled = $("goPrac").disabled = $("goGame").disabled = false;
     msg.textContent = e && e.name === "NotAllowedError" ? "カメラが許可されていません。ブラウザの設定で許可してから、もう一度押してください。" : "カメラを使えませんでした。もう一度押してください。";
   }
 }
 $("go").addEventListener("click", () => start("free"));
 $("goPrac").addEventListener("click", () => start("practice"));
+$("goGame").addEventListener("click", () => start("game"));
 // 別のアプリから戻った時に音が止まったままになることがある(iOS)。画面を触れば戻る
 document.addEventListener("visibilitychange", () => { if (ac) document.hidden ? ac.suspend() : ac.resume(); });
 document.addEventListener("pointerdown", () => { if (ac && ac.state !== "running") ac.resume(); if (state.phase === "live" && video.paused) video.play().catch(() => {}); });

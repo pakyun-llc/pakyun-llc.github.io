@@ -8,7 +8,7 @@
 <title>顔芸(試作)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@500;700&family=Yomogi&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Darumadrop+One&family=Slackside+One&family=Yomogi&display=swap" rel="stylesheet">
 <style>
   /* 海外ミームの作法: 画の上に白い帯、そこに普通の黒い字。飾らない。色は白と黒だけ */
   :root { --white: #fff; --black: #000; --band: calc(env(safe-area-inset-top) + 92px); }
@@ -30,21 +30,42 @@
   #start button, #sum button { font-size: 19px; height: 58px; width: 100%; max-width: 360px; margin-bottom: 12px; }
   #start button[disabled] { opacity: .4; }
   #msg { min-height: 1.7em; font-size: 14px; }
-  #sumList { list-style: none; padding: 0; margin: 0 0 24px; font-size: 17px; line-height: 1.9; }
+  #sumList { list-style: none; padding: 0; margin: 0 0 24px; font-size: 22px; line-height: 1.8; }
   #sumList li { display: flex; justify-content: space-between; max-width: 360px; border-bottom: 1px solid #000; }
 
   #hud { position: fixed; inset: 0; display: none; pointer-events: none; }
   #band { position: absolute; left: 0; right: 0; top: 0; height: var(--band); background: var(--white); padding: calc(env(safe-area-inset-top) + 10px) 16px 0;
     display: flex; flex-direction: column; justify-content: center; padding-bottom: 8px; }
   body.nocap #band { display: none; }
-  /* 帯の字だけ、ペンで雑に書いたような字(?f=g で普通のゴシックに戻せる) */
-  body:not(.gothic) #cap, body:not(.gothic) #sub, body:not(.gothic) h1, body:not(.gothic) h2 { font-family: "Yomogi", Arial, "Hiragino Sans", sans-serif; font-weight: 400; }
-  body:not(.gothic) #cap { font-size: 31px; } body:not(.gothic) #cap.long { font-size: 23px; } #cap.long { font-size: 20px; } body:not(.gothic) #sub { font-size: 17px; } body:not(.gothic) h1, body:not(.gothic) h2 { font-size: 40px; }
   #cap { font-weight: 700; font-size: 27px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: clip; }
   #sub { font-size: 15px; line-height: 1.4; min-height: 1.4em; }
   #meter { position: absolute; left: 0; bottom: 0; height: 6px; width: 100%; background: var(--black); transform-origin: left; transform: scaleX(0); }
   #bar { position: absolute; left: 12px; right: 12px; bottom: calc(14px + env(safe-area-inset-bottom)); display: flex; justify-content: space-between; pointer-events: auto; }
   #bar button { font-size: 15px; min-height: 44px; padding: 0 14px; }
+  /* 字は落書き。1 文字ずつ傾きと位置をずらし、0.2 秒ごとに描き直したように揺らす(main.js の jitter)
+     b(既定)= 画に直接、白い太字+黒ふち / a = 白帯に黒いペン字 / c = 画に直接、赤いペン+白ふち */
+  #cap span { display: inline-block; white-space: pre; }
+  #cap, #sub { font-weight: 400; overflow: visible; }
+  body.fb, body.fc { --band: 0px; }
+  body.fb #band, body.fc #band { background: none; height: auto; padding-top: calc(env(safe-area-inset-top) + 14px); }
+  body.fb #cap, body.fb #sub, body.fc #cap, body.fc #sub { transform: rotate(-2deg); transform-origin: left center; }
+  body.fb #cap, body.fb #sub, body.fb h1, body.fb h2 { font-family: "Darumadrop One", "Hiragino Sans", sans-serif; }
+  body.fb #cap, body.fb #sub { color: #fff; -webkit-text-stroke: 7px #000; paint-order: stroke fill; }
+  body.fb #cap { font-size: 40px; } body.fb #cap.long { font-size: 29px; } body.fb #sub { font-size: 22px; -webkit-text-stroke-width: 5px; margin-top: 4px; }
+  body.fc #cap, body.fc #sub, body.fc h1, body.fc h2 { font-family: "Yomogi", "Hiragino Sans", sans-serif; }
+  body.fc #cap, body.fc #sub { color: #e8121d; -webkit-text-stroke: 9px #fff; paint-order: stroke fill; text-shadow: 0 0 1px #e8121d, 1px 0 0 #e8121d, 0 1px 0 #e8121d; }
+  body.fc #cap { font-size: 40px; } body.fc #cap.long { font-size: 29px; } body.fc #sub { font-size: 22px; -webkit-text-stroke-width: 7px; margin-top: 4px; }
+  body.fa #cap, body.fa #sub, body.fa h1, body.fa h2 { font-family: "Slackside One", "Hiragino Sans", sans-serif; }
+  body.fa #cap { font-size: 36px; } body.fa #cap.long { font-size: 26px; } body.fa #sub { font-size: 19px; }
+  body.fb #meter, body.fc #meter { position: fixed; top: auto; bottom: 0; height: 10px; background: #fff; }
+  h1, h2 { font-weight: 400; font-size: 46px; }
+  /* ボタンも落書き: いびつな枠、少し傾ける */
+  button { font-family: inherit; font-weight: 400; border-width: 3px; border-radius: 255px 18px 225px 18px / 18px 225px 18px 255px; transform: rotate(-1.2deg); }
+  button:nth-of-type(2n) { transform: rotate(1.4deg); border-radius: 18px 225px 18px 255px / 255px 18px 225px 18px; }
+  body.fa button, body.fa #sumList { font-family: "Slackside One", "Hiragino Sans", sans-serif; }
+  body.fb button, body.fb #sumList { font-family: "Darumadrop One", "Hiragino Sans", sans-serif; }
+  body.fc button, body.fc #sumList { font-family: "Yomogi", "Hiragino Sans", sans-serif; }
+  #bar button { font-size: 18px; } #start button, #sum button { font-size: 24px; }
   #kdebug { position: absolute; left: 8px; top: calc(var(--band) + 8px); color: #fff; font: 11px/1.35 ui-monospace, monospace; white-space: pre; display: none; text-shadow: 0 0 3px #000, 0 0 3px #000; }
 </style>
 </head>
@@ -54,16 +75,17 @@
 <canvas id="probe" width="144" height="192"></canvas>
 
 <div id="start">
-  <h1>顔で鳴らす</h1>
+  <h1>かおで ならす</h1>
   <p>顔を動かすと、顔が変な形になって音が出ます。映像はこの端末の中だけで使い、どこにも送りません。</p>
   <button id="go">あそぶ</button>
-  <button id="goPrac">れんしゅうする</button>
+  <button id="goPrac">れんしゅう</button>
+  <button id="goGame">3コマ</button>
   <div id="msg"></div>
 </div>
 
 <div id="hud">
   <div id="band"><div id="cap" aria-live="polite"></div><div id="sub"></div><div id="meter"></div></div>
-  <div id="bar"><button id="bL"></button><button id="bR"></button></div>
+  <div id="bar"><button id="bL"></button><button id="bM"></button><button id="bR"></button></div>
   <div id="kdebug"></div>
 </div>
 
@@ -71,7 +93,7 @@
   <h2 id="sumHead"></h2>
   <ul id="sumList"></ul>
   <button id="sumFree">あそぶ</button>
-  <button id="sumAgain">もう一回れんしゅうする</button>
+  <button id="sumAgain">もういっかい</button>
 </div>
 <script type="module" src="main.js"></script>
 </body>
