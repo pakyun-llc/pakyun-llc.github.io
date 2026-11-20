@@ -288,15 +288,7 @@ const vel = zero();
 let prev = performance.now(), frames = 0, fpsT = prev;
 // ---------- 字と進行 ----------
 const shown = {};
-const calm = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
-const wob = (el) => { el.style.transform = `translate(${(Math.random() * 3 - 1.5).toFixed(1)}px, ${(Math.random() * 7 - 3.5).toFixed(1)}px) rotate(${(Math.random() * 14 - 7).toFixed(1)}deg) scale(${(0.92 + Math.random() * 0.18).toFixed(2)})`; };
-function put(id, text) {
-  if (shown[id] === text) return; shown[id] = text; const el = $(id);
-  if (id !== "cap") { el.textContent = text; return; }
-  el.classList.toggle("long", text.length > 9); el.textContent = "";
-  for (const ch of text) { const sp = document.createElement("span"); sp.textContent = ch; wob(sp); el.appendChild(sp); }   // 1 文字ずつ、雑に
-}
-if (!calm) setInterval(() => { if (state.phase === "live") for (const sp of $("cap").children) wob(sp); }, 220);
+function put(id, text) { if (shown[id] !== text) { shown[id] = text; $(id).textContent = text; if (id === "cap") $(id).classList.toggle("long", text.length > 9); } }
 let capKey = "", capT = 0, armed = false, holdT = 0, okT = 0, waitT = 0;
 function ui(dt, on) {
   if (state.mode === "practice") return practice(dt, on);
@@ -407,9 +399,9 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 // 字は使う文字だけ先に読んでおく(途中で別の字に化けないように)
-const FV = ["a", "b", "c"].includes(params.get("f")) ? params.get("f") : "b";
+const FV = ["k", "y"].includes(params.get("f")) ? params.get("f") : "s";
 document.body.classList.add("f" + FV);
-const FACE = { a: '24px "Slackside One"', b: '24px "Darumadrop One"', c: '24px "Yomogi"' }[FV];
+const FACE = { s: '24px "Slackside One"', k: '24px "Zen Kurenaido"', y: '24px "Yomogi"' }[FV];
 if (document.fonts) document.fonts.load(FACE, Object.values(NAMES).join("") + STEPS.map((t) => t[1]).join("") + "かおをうつしてごだめならとばすできたになるまずは3コマめちゅう0123456789/→○×").catch(() => {});
 
 async function makeLandmarker(delegate) {
