@@ -8,7 +8,7 @@
 <title>waowao(試作)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Hachi+Maru+Pop&family=Slackside+One&family=Yomogi&family=Zen+Kurenaido&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Hachi+Maru+Pop&family=Just+Me+Again+Down+Here&family=Slackside+One&family=Yomogi&family=Zen+Kurenaido&display=swap" rel="stylesheet">
 <style>
   /* スマホの写真に、指のペンで書きこんだ字。細い白い線を画に直接。枠も帯も動きもつけない。
      色は白と黒だけ。書体は 1 つ(既定 Slackside One。?f=k で Zen Kurenaido、?f=y で Yomogi) */
@@ -38,7 +38,7 @@
   #sumList li { display: flex; justify-content: space-between; }
 
   #hud { position: fixed; inset: 0; display: none; pointer-events: none; color: var(--pen);
-    text-shadow: 0 0 2px rgba(0,0,0,.95), 0 1px 4px rgba(0,0,0,.7), 0 0 14px rgba(0,0,0,.35); }
+    text-shadow: 0 0 2px #000, 0 0 3px rgba(0,0,0,.9), 0 1px 5px rgba(0,0,0,.8), 0 0 16px rgba(0,0,0,.45); }
   #band { position: absolute; left: 18px; right: 12px; top: calc(env(safe-area-inset-top) + 14px); transform: rotate(-2deg); transform-origin: left center; }
   body.nocap #band { display: none; }
   #cap { font-size: 54px; line-height: 1.12; -webkit-text-stroke: .6px var(--pen); }
@@ -47,7 +47,15 @@
   #meter { position: fixed; left: 0; bottom: 0; height: 6px; width: 100%; background: var(--pen); transform-origin: left; transform: scaleX(0); box-shadow: 0 0 4px rgba(0,0,0,.8); }
   #bar { position: absolute; left: 18px; right: 18px; bottom: calc(16px + env(safe-area-inset-bottom)); display: flex; justify-content: space-between; pointer-events: auto; }
   #bar button { font-size: 35px; white-space: nowrap; min-height: 60px; padding: 0 6px 11px; text-shadow: 0 0 3px #000, 0 0 3px #000, 0 1px 6px rgba(0,0,0,.8); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 10' preserveAspectRatio='none'%3E%3Cpath d='M2 6 C 18 2 34 9 52 5 S 84 2 99 6 S 112 7 118 4' fill='none' stroke='%23fff' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E"); filter: drop-shadow(0 0 2px #000) drop-shadow(0 0 1px #000); }
-  html[lang="en"] #bar button { font-size: 33px; }
+  /* 英語は Just Me Again Down Here(ユウキさんが比較表の D を選択)。字面が小さい書体なので全体に大きくする。ロゴだけは Slackside の形のまま */
+  html[lang="en"] body { --hand: "Just Me Again Down Here"; }
+  html[lang="en"] h1 { font-family: "Slackside One", sans-serif; }
+  html[lang="en"] h2 { font-size: 66px; }
+  html[lang="en"] #cap { font-size: 64px; line-height: 1; -webkit-text-stroke-width: .9px; } html[lang="en"] #cap.long { font-size: 50px; }
+  html[lang="en"] #sub { font-size: 40px; line-height: 1.05; }
+  html[lang="en"] #bar button { font-size: 44px; }
+  html[lang="en"] #start button, html[lang="en"] #sum button { font-size: 56px; }
+  html[lang="en"] #sumList { font-size: 38px; line-height: 1.25; }
   #kdebug { position: absolute; left: 8px; top: 120px; font: 11px/1.35 ui-monospace, monospace; white-space: pre; display: none; }
 </style>
 </head>
