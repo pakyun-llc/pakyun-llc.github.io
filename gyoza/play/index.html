@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#8a5f38">
+<link rel="icon" href="data:,">
+<title>餃子とドリル</title>
+<style>
+@font-face{font-family:"YujiBoku";src:url("fonts/YujiBoku.subset.woff") format("woff");font-weight:400;font-display:block}
+@font-face{font-family:"GZNum";src:url("fonts/ShipporiNum.subset.woff") format("woff");font-weight:400;font-display:block}
+:root{--ink:#241a12;--paper:#fff6e6;--red:#b5281c;--ease-out:cubic-bezier(.23,1,.32,1);--u:1px}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#1d1611;overflow:hidden;overscroll-behavior:none}
+body{font-family:"YujiBoku","GZNum","Hiragino Mincho ProN","Yu Mincho",serif;font-weight:400;color:var(--ink);
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none}
+#stage{position:absolute;left:50%;top:0;transform:translateX(-50%);overflow:hidden;background:#8a5f38}
+#stage canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block}
+#fx{touch-action:none;cursor:pointer}
+/* 字は写真の上に じかに置く(帯・カードなし)。紙色のにじみで支える */
+.txt{position:absolute;left:0;right:0;text-align:center;pointer-events:none;
+  text-shadow:0 0 calc(var(--u)*5) var(--paper),0 0 calc(var(--u)*5) var(--paper),0 0 calc(var(--u)*14) var(--paper),0 0 calc(var(--u)*28) rgba(255,246,230,.9)}
+#title{top:calc(var(--u)*150 + env(safe-area-inset-top));transition:opacity 200ms var(--ease-out),transform 200ms var(--ease-out)}
+#title h1{margin:0;font-weight:400;font-size:calc(var(--u)*150);line-height:1.12;letter-spacing:.02em}
+#title.en h1{font-size:calc(var(--u)*118)}
+#title p{margin:calc(var(--u)*20) 0 0;font-size:calc(var(--u)*44);letter-spacing:.04em}
+#title.off{opacity:0;transform:translateY(calc(var(--u)*-14))}
+#start{position:absolute;left:0;right:0;bottom:calc(var(--u)*150 + env(safe-area-inset-bottom));text-align:center;transition:opacity 200ms var(--ease-out)}
+#start.off{opacity:0;pointer-events:none}
+#boss{top:calc(var(--u)*170 + env(safe-area-inset-top));font-size:calc(var(--u)*54);line-height:1.25;text-wrap:balance;padding:0 calc(var(--u)*50);opacity:0;transform:translateY(calc(var(--u)*-10));
+  transition:opacity 160ms var(--ease-out),transform 160ms var(--ease-out)}
+#boss.on{opacity:1;transform:none;transition-duration:220ms}
+#hint{bottom:calc(var(--u)*120 + env(safe-area-inset-bottom));font-size:calc(var(--u)*44);text-wrap:balance;letter-spacing:.04em;padding:0 calc(var(--u)*60);opacity:0;transition:opacity 200ms var(--ease-out)}
+#hint.on{opacity:1}
+#result{bottom:calc(var(--u)*64 + env(safe-area-inset-bottom));opacity:0;visibility:hidden}
+#result.on{visibility:visible;opacity:1}
+#result>*{opacity:0;transform:translateY(calc(var(--u)*16));transition:opacity 260ms var(--ease-out),transform 260ms var(--ease-out)}
+#result.on>*{opacity:1;transform:none}
+#result.on>*:nth-child(2){transition-delay:50ms}#result.on>*:nth-child(3){transition-delay:90ms}
+#result.on>*:nth-child(4){transition-delay:120ms}#result.on>*:nth-child(5){transition-delay:150ms}#result.on>*:nth-child(6){transition-delay:190ms}
+#r-label{font-size:calc(var(--u)*46);letter-spacing:.06em}
+#r-big{font-size:calc(var(--u)*210);line-height:1.05;font-variant-numeric:tabular-nums}
+#r-big small{font-size:.42em;margin-left:.08em}
+#r-big.word{font-size:calc(var(--u)*150);line-height:1.2}
+#r-rank{font-size:calc(var(--u)*70);color:var(--red);margin-top:calc(var(--u)*2)}
+#r-rank.bad{color:var(--ink)}
+#r-line{font-size:calc(var(--u)*48);margin-top:calc(var(--u)*14);padding:0 calc(var(--u)*40)}
+#r-stat{font-size:calc(var(--u)*36);margin-top:calc(var(--u)*12)}
+#r-btns{margin-top:calc(var(--u)*30);display:flex;justify-content:center;gap:calc(var(--u)*26);pointer-events:auto;text-shadow:none}
+button{font:inherit;color:var(--ink);background:var(--paper);border:0;border-radius:calc(var(--u)*14);height:calc(var(--u)*116);padding:0 calc(var(--u)*60);
+  font-size:calc(var(--u)*48);box-shadow:0 calc(var(--u)*6) calc(var(--u)*20) rgba(36,26,18,.34);transition:transform 140ms var(--ease-out);touch-action:manipulation;cursor:pointer;pointer-events:auto}
+button:active{transform:scale(.97)}
+button.main{background:var(--red);color:var(--paper)}
+button:focus-visible{outline:calc(var(--u)*6) solid var(--ink);outline-offset:calc(var(--u)*6)}
+@media (prefers-reduced-motion:reduce){#title,#boss,#result>*{transition-duration:1ms}}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="bg"></canvas><canvas id="fx"></canvas>
+  <div id="title" class="txt"><h1></h1><p></p></div>
+  <div id="boss" class="txt"></div>
+  <div id="hint" class="txt"></div>
+  <div id="start"><button id="b-in" class="main"></button></div>
+  <div id="result" class="txt"><div id="r-label"></div><div id="r-big"></div><div id="r-rank"></div><div id="r-line"></div><div id="r-stat"></div>
+    <div id="r-btns"><button id="b-again" class="main"></button><button id="b-share"></button></div></div>
+</div>
+<script src="js/game.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
