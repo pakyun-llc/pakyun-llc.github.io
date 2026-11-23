@@ -487,7 +487,7 @@ const STONE_AFTER = parseFloat(params.get("stoneAfter")) || 5;   // じっとし
 const STONE_HINT = Math.min(1.8, STONE_AFTER * 0.4), STONE_NEED = 5, STONE_GRACE = 4;   // 終わりぎわの前ぶれの秒数 / 割るのに要る表情の種類 / 割れた直後だけ足す秒数
 // 数える表情 9 種(ウインクは左右で 1 種。ベロは判定があてにならないので数えない)
 const KINDS = [["open"], ["brow"], ["eye"], ["puck"], ["smile"], ["winkL", "winkR"], ["tilt"], ["side"], ["near"]];
-const K = state.stoneSkin = { amt: 0, skin: [0.6, 0.45, 0.4], gl: null, phase: "skin", still: 0, turn: 0, crack: 0, brk: 0, kinds: [], hold: KINDS.map(() => 0), speed: 0, last: null, bits: [], knocks: 0, snaps: 0, falls: 0, stall: 0, playT: 0 };
+const K = state.stoneSkin = { amt: 0, skin: [0.6, 0.45, 0.4], gl: null, phase: "skin", still: 0, turn: 0, crack: 0, brk: 0, kinds: [], hold: KINDS.map(() => 0), speed: 0, last: null, bits: [], knocks: 0, snaps: 0, falls: 0, stall: 0, playT: 0, tell: false, tipUsed: false, tipT: 0 };
 // 髪の切り抜き(MediaPipe の HairSegmenter。Apache-2.0、約 0.78MB。顔を見つける仕組みと同じ置き場 = Google の storage から読む。映像は端末の外へ出ない)。
 // 土になりかける時に はじめて読む(ふだんの あそぶ は何も負担しない)。読めない・こわれた時は何もしないで、前のやり方(暗い所だけ つぶす)のまま
 const HAIR_MODEL = params.get("hair") === "bad" ? "https://storage.googleapis.com/mediapipe-models/image_segmenter/hair_segmenter/float32/latest/nope.tflite"   // ?hair=bad = 読めない時の確認用 / ?hair=0 = 使わない
@@ -522,9 +522,11 @@ function hairStep(now, dt) {
   H.ms += (performance.now() - t0 - H.ms) * (H.runs ? 0.15 : 1); H.runs++;
 }
 let turnedOnce = false;
+// ちがう かおを する を もう見せたか(端末に覚えておく。覚えられない環境では、ページを開いている間だけ)
+let clayTold = false; try { clayTold = localStorage.getItem("clayTold") === "1"; } catch (e) {}
 // まだ数えていない動き(判定が確かな順)の、れんしゅう用の言い方
 function stoneTip() { const i = [1, 0, 4, 3, 6, 8, 7, 2, 5].find((k) => !K.kinds.includes(k)); return (STEPS.find((st) => st[0][0] === KINDS[i][0]) || STEPS[0])[1]; }
-function skinReset(stone) { H.has = false; H.on = 0; Object.assign(K, { stall: 0, playT: 0, phase: stone ? "stone" : "skin", still: 0, turn: stone ? 1 : 0, crack: 0, brk: 0, kinds: [], hold: KINDS.map(() => 0), speed: 0, last: null, bits: [], amt: 0 }); }
+function skinReset(stone) { H.has = false; H.on = 0; Object.assign(K, { stall: 0, playT: 0, tell: false, tipUsed: false, tipT: 0, phase: stone ? "stone" : "skin", still: 0, turn: stone ? 1 : 0, crack: 0, brk: 0, kinds: [], hold: KINDS.map(() => 0), speed: 0, last: null, bits: [], amt: 0 }); }
 function skinStep(dt, on) {
   const t = state.t, expr = Math.max(...CH.filter((k) => k !== "tongue").map((k) => Math.abs(t[k]))), head = clamp((K.speed - 0.35) / 1.2);
   let grind = 0;
@@ -535,16 +537,18 @@ function skinStep(dt, on) {
     const hint = clamp((K.still - (STONE_AFTER - STONE_HINT)) / STONE_HINT);
     K.turn += (0.32 * hint - K.turn) * Math.min(1, dt * (hint > 0 ? 6 : 8)); grind = 0.3 * hint;
     if (on) K.playT += dt;
-    if (K.still >= STONE_AFTER) { K.phase = "turning"; turnedOnce = true; }
+    if (K.still >= STONE_AFTER) { K.phase = "turning"; turnedOnce = true; K.tell = !clayTold; K.tipUsed = false; K.tipT = 0;
+      if (!clayTold) { clayTold = true; try { localStorage.setItem("clayTold", "1"); } catch (e) {} } }
   } else if (K.phase === "turning") {
     K.turn = Math.min(1, K.turn + dt / 1.1); grind = 1;
     if (K.turn >= 1) { K.phase = "stone"; K.kinds = []; K.hold.fill(0); K.stall = 0; K.knocks++; stoneKnock(); }
   } else if (K.phase === "stone" && on) {
-    K.stall += dt;
+    K.stall += dt; K.tipT = Math.max(0, K.tipT - dt);
+    if (!K.tipUsed && K.stall > 12) { K.tipUsed = true; K.tipT = 6; }
     // ちがう種類を はっきりやるたびに ひびが 1 本(同じ種類は 1 回だけ数える)。3コマ と同じ見方: 0.5 以上が 0.2 秒
     KINDS.forEach((keys, i) => {
       K.hold[i] = Math.max(...keys.map((k) => Math.abs(t[k]))) >= 0.5 ? K.hold[i] + dt : 0;
-      if (K.hold[i] > 0.2 && !K.kinds.includes(i)) { K.kinds.push(i); K.stall = 0;
+      if (K.hold[i] > 0.2 && !K.kinds.includes(i)) { K.kinds.push(i); K.stall = 0; K.tipT = 0;
         if (K.kinds.length >= STONE_NEED) { K.phase = "breaking"; K.brk = 0; K.falls++; stoneFall(); bitsSpawn(); } else { K.snaps++; stoneSnap(); } }
     });
   } else if (K.phase === "breaking") {
@@ -943,9 +947,10 @@ function ui(dt, on) {
   const act = CH.filter((k) => Math.abs(state.t[k]) > 0.3 && on).sort((a, b) => Math.abs(state.t[b]) - Math.abs(state.t[a]));
   const key = [...new Set(act.map((k) => nb(NAMES[k])))].slice(0, 2).join(W.and);
   capT += dt; if (key !== capKey && (capT > 0.8 || !capKey)) { capKey = key; capT = 0; }
-  // 何もしていない時の字: ふだんは かおを うごかす。しばらく遊んでも一度も石になっていなければ じっと してみる(1 回の起動で石になるまで)。
-  // 石の間は ちがう かおを する。8 秒ひびが増えなければ、まだ数えていない動きを 1 つ言う
-  const idle = K.phase === "stone" || K.phase === "turning" ? (K.stall > 8 ? nb(stoneTip()) : W.other) : !turnedOnce && K.playT > 15 ? W.tryStill : W.move;
+  // 何もしていない時の字: ふだんは かおを うごかす。しばらく遊んでも一度も土になっていなければ じっと してみる(1 回の起動で土になるまで)。
+  // 土の間は何も出さない(型の名前だけ)。ちがう かおを する は、この端末で はじめて土になった 1 回だけ。
+  // 12 秒ひびが増えなければ、まだ数えていない動きを 1 つ、6 秒だけ言う(土になるたびに 1 回まで)
+  const idle = K.phase === "stone" || K.phase === "turning" ? (K.tipT > 0 ? nb(stoneTip()) : K.tell ? W.other : "") : !turnedOnce && K.playT > 15 ? W.tryStill : W.move;
   put("cap", !on ? W.show : capKey || idle); put("sub", "");
   $("meter").style.transform = "scaleX(0)";
 }
