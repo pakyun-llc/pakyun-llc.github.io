@@ -1,143 +1,104 @@
-// 鼻ボタン: 遊びの式だけ(画面・音・入力の取り方は知らない)。ブラウザでも node でも同じものを読む。
-// ネイティブへ移すときは このファイルの式を そのまま写す(時刻は ms、スティックは −1〜1)。
+// 鼻ボタン(2 版め): 遊びの式だけ(画面・音・入力の取り方は知らない)。ブラウザでも node でも同じものを読む。
+// 話: 寝ている犬の鼻をスティックにして 携帯ゲームを遊ぶ。うまく遊びつつ 起こさない。犬の顔が出たら おしまい。
+// 時刻は ms、スティックは −1〜1。ネイティブへ移すときは この式を そのまま写す。
 (function (root) {
   'use strict';
-  // ---- 定数 ----
-  var ZONE_MAG = 0.5;        // 方向に「入った」とみなす倒し幅
-  var ZONE_ANG = 50;         // 方向の許容(度)
-  var CENTER_MAG = 0.3;      // 「とめる」= ここより内側
-  var WIN_MAX = 220;         // 判定の窓(±ms)。音の間が詰まると 間の 45% まで縮む
-  var PERFECT = 60, GOOD = 120;
-  var PTS = { perfect: 100, good: 70, ok: 40, hold: 100, miss: 0, idle: 0, moved: 0 };
-  var DISTURB_STAGE = [4, 8, 12];   // 耳ぴく / 片目があく / 起きる
-  var CALM_EVERY = 5;        // 続けて合うと 1 つ落ち着く
-  var IDLE_LIMIT = 8;        // さわらないまま これだけ逃すと「ぐっすり」で終わり
-
-  // [BPM, 1 文字ぶんの拍, 並び]  L R U D = 倒す向き / . = とめる(犬が もぞっとする)/ - = 休み
-  var SECTIONS = [
-    [80, 1, '----'],
-    [80, 1, 'LRLRLRLR'],
-    [80, 1, 'UDUDLRUD'],
-    [80, 1, '..'],
-    [96, 1, 'LRLRUDUD'],
-    [96, 1, 'RDLURDLU'],
-    [96, 0.5, 'LRLRLRLR'],
-    [96, 1, 'UDUD'],
-    [96, 1, '..'],
-    [112, 1, 'LRUDLRUD'],
-    [112, 0.5, 'RDLURDLU'],
-    [112, 0.5, 'LRLRLRLR'],
-    [112, 0.5, 'UDUDLRLR'],
-    [112, 1, '...']
-  ];
-  var VEC = { L: [-1, 0], R: [1, 0], U: [0, -1], D: [0, 1], C: [0, 0] };
+  var ZONE_MAG = 0.45, ZONE_ANG = 50;      // 液晶の犬が その向きを向く 倒し幅と角度
+  var GRACE = 140;                         // ほねが口もとに居る時間(ms)。この間に向けば くわえる
+  var LIVES = 4;                           // 落とせる数。4 つめで 液晶のゲームが おしまい
+  // 起きかけ(wake 0〜1。1 で犬が顔を出す)
+  var K_MOVE = 0.010;                     // 鼻を 1.0 ぶん動かすごとに
+  var V0 = 9.0;                            // これより速い動き(1.0/秒 単位)は 2 乗で効く = 雑なほど起きる
+  var K_TILT = 0.30, TILT_FREE = 0.85;     // 倒しすぎ(0.85 より外)は 押しつけている間ずっと
+  var DECAY_HOLD = 0.012, DECAY_FREE = 0.030;   // じっとしていると落ち着く(指を離すと もっと)
+  var LIGHT_MULT = 3.5;                    // 眠りが浅い間(いびきが止まる)は 3.5 倍 効く
+  var STAGE = [0.34, 0.67, 1.0];           // もぞっ / フガッ(パッドがはねる)/ 顔が出る
+  var PHASES = [[12000, 1500, 430], [26000, 1050, 380], [43500, 780, 300]];   // [ここまで ms, ほねの間隔, 1 コマの長さ]
+  var LIGHTS = [14200, 26800, 34600, 40300], LIGHT_LEN = 1900, LIGHT_WARN = 650;
+  var VEC = { L: [-1, 0], R: [1, 0], U: [0, -1], D: [0, 1] }, DIRS = ['L', 'R', 'U', 'D'];
 
   function rng(seed) { var s = (seed >>> 0) || 1; return function () { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
-
-  // 譜面。seed で 左右・上下を入れ替える(毎回 少し違う)
   function makeChart(seed) {
-    var r = rng(seed || 1), notes = [], beats = [], t = 600, i, j;
-    for (i = 0; i < SECTIONS.length; i++) {
-      var bpm = SECTIONS[i][0], step = SECTIONS[i][1], pat = SECTIONS[i][2];
-      var fx = r() < 0.5, fy = r() < 0.5, ms = 60000 / bpm * step, acc = 0;
-      for (j = 0; j < pat.length; j++) {
-        var c = pat[j];
-        if (fx) c = c === 'L' ? 'R' : c === 'R' ? 'L' : c;
-        if (fy) c = c === 'U' ? 'D' : c === 'D' ? 'U' : c;
-        if (Math.abs(acc - Math.round(acc)) < 1e-6) beats.push({ t: t, bpm: bpm, sec: i, quiet: c === '.' });
-        if (c === '.') notes.push({ t: t, dir: 'C', hold: j > 0 && pat[j - 1] === '.', sec: i });
-        else if (c !== '-') notes.push({ t: t, dir: c, hold: false, sec: i });
-        t += ms; acc += step;
-      }
+    var r = rng(seed || 1), items = [], t = 2600, prev = null, p = 0, i;
+    for (i = 0; i < 6; i++) r();
+    while (true) {
+      while (p < PHASES.length && t > PHASES[p][0]) p++;
+      if (p >= PHASES.length) break;
+      var d; do { d = DIRS[Math.floor(r() * 4)]; } while (d === prev);      // 毎回 向きが変わる = 毎回 鼻を動かす
+      items.push({ i: items.length, t: t, dir: d, step: PHASES[p][2] }); prev = d;
+      t += PHASES[p][1];
     }
-    for (i = 0; i < notes.length; i++) {
-      var gp = i > 0 ? notes[i].t - notes[i - 1].t : 1e9, gn = i < notes.length - 1 ? notes[i + 1].t - notes[i].t : 1e9;
-      notes[i].i = i; notes[i].w = Math.min(WIN_MAX, 0.45 * Math.min(gp, gn));
-      notes[i].gap = gp;
-    }
-    return { notes: notes, beats: beats, end: t + 500, seed: seed };
+    var lights = LIGHTS.map(function (a) { var t0 = a + Math.round((r() - 0.5) * 1000); return { t0: t0, t1: t0 + LIGHT_LEN, warn: t0 - LIGHT_WARN }; });
+    return { items: items, lights: lights, end: items[items.length - 1].t + GRACE + 400, seed: seed };
   }
-
-  function inZone(dir, x, y) {
-    var m = Math.sqrt(x * x + y * y);
-    if (dir === 'C') return m <= CENTER_MAG;
-    if (m < ZONE_MAG) return false;
-    var v = VEC[dir], cos = (x * v[0] + y * v[1]) / m;
-    return cos >= Math.cos(ZONE_ANG * Math.PI / 180);
+  function zoneOf(x, y) {
+    var m = Math.sqrt(x * x + y * y); if (m < ZONE_MAG) return null;
+    for (var i = 0; i < 4; i++) { var v = VEC[DIRS[i]]; if ((x * v[0] + y * v[1]) / m >= Math.cos(ZONE_ANG * Math.PI / 180)) return DIRS[i]; }
+    return null;
   }
-
-  function zoneOf(x, y) { var d = ['L', 'R', 'U', 'D']; for (var i = 0; i < 4; i++) if (inZone(d[i], x, y)) return d[i]; return null; }
 
   function Game(chart) {
-    this.chart = chart; this.notes = chart.notes; this.k = 0;
-    this.x = 0; this.y = 0; this.touch = false;
-    this.score = 0; this.max = 0; this.combo = 0; this.maxCombo = 0; this.streak = 0;
-    this.disturb = 0; this.stage = 0; this.idleRun = 0; this.over = null;
-    this.count = { perfect: 0, good: 0, ok: 0, hold: 0, miss: 0, idle: 0, moved: 0 };
-    this.log = [];
+    this.chart = chart; this.items = chart.items; this.k = 0;
+    this.x = 0; this.y = 0; this.touch = false; this.t = 0; this.tIn = -1e9;
+    this.wake = 0; this.peak = 0; this.stage = 0; this.light = false;
+    this.caught = 0; this.missed = 0; this.over = null; this.log = [];
   }
-  Game.prototype._resolve = function (n, grade, err, out) {
-    n.done = grade; n.err = err; this.k = n.i + 1;
-    this.count[grade]++; this.score += PTS[grade]; this.max += 100;
-    this.log.push({ i: n.i, dir: n.dir, grade: grade, err: err });
-    var hit = grade === 'perfect' || grade === 'good' || grade === 'ok' || grade === 'hold';
-    if (hit) {
-      this.combo++; this.idleRun = 0; if (this.combo > this.maxCombo) this.maxCombo = this.combo;
-      if (grade !== 'ok') { this.streak++; if (this.streak % CALM_EVERY === 0 && this.disturb > 0) this.disturb--; } else this.streak = 0;
-    } else {
-      this.combo = 0; this.streak = 0;
-      if (grade === 'idle') this.idleRun++; else { this.idleRun = 0; this.disturb += grade === 'moved' ? 2 : 1; }
-    }
-    out.push({ type: 'judge', note: n, grade: grade, err: err });
-    var st = 0; for (var s = 0; s < 3; s++) if (this.disturb >= DISTURB_STAGE[s]) st = s + 1;
-    if (st !== this.stage) { this.stage = st; out.push({ type: 'stage', stage: st }); }
-    if (!this.over) {
-      if (st >= 3) this.over = 'woke';
-      else if (this.idleRun >= IDLE_LIMIT) this.over = 'idle';
-      else if (this.k >= this.notes.length) this.over = 'clear';
-      if (this.over) out.push({ type: 'end', kind: this.over, t: n.t });
-    }
+  Game.prototype.isLight = function (t) { var L = this.chart.lights; for (var i = 0; i < L.length; i++) if (t >= L[i].t0 && t < L[i].t1) return true; return false; };
+  Game.prototype._wake = function (dw, t, out) {
+    if (this.over) return;
+    this.wake = Math.max(0, this.wake + dw); if (this.wake > this.peak) this.peak = Math.min(1, this.wake);
+    var st = 0; for (var s = 0; s < 3; s++) if (this.wake >= STAGE[s]) st = s + 1;
+    if (st !== this.stage) { var up = st > this.stage; this.stage = st; out.push({ type: 'stage', stage: st, up: up }); }
+    if (st >= 3) { this.over = 'woke'; out.push({ type: 'end', kind: 'woke', t: t }); }
   };
-  // 時刻 t まで進める(いまのスティックの位置のまま)
+  Game.prototype._item = function (it, ok, t, out) {
+    it.done = ok ? 'catch' : 'miss'; it.at = t; this.k = it.i + 1;
+    if (ok) this.caught++; else this.missed++;
+    this.log.push({ i: it.i, dir: it.dir, res: it.done, at: t - it.t });
+    out.push({ type: it.done, item: it });
+    if (this.over) return;
+    if (this.missed >= LIVES) { this.over = 'lcdover'; out.push({ type: 'end', kind: 'lcdover', t: t }); }
+    else if (this.k >= this.items.length) { this.over = 'clear'; out.push({ type: 'end', kind: 'clear', t: t }); }
+  };
+  // 時刻 t まで進める(スティックは いまの位置のまま)
   Game.prototype.advance = function (t, out) {
     out = out || [];
-    while (!this.over && this.k < this.notes.length) {
-      var n = this.notes[this.k], ws = n.t - n.w, we = n.t + n.w;
-      if (t < ws) break;
-      if (this.touch) n.touched = true;
-      var inside = inZone(n.dir, this.x, this.y);
-      if (n.hold) {                                   // とめたまま: 窓のあいだ 動かさない
-        if (!inside) { this._resolve(n, 'moved', t - n.t, out); continue; }
-        if (t >= we) { this._resolve(n, 'hold', 0, out); continue; }
+    while (!this.over && this.t < t) {
+      var t1 = Math.min(t, this.t + 20), dt = (t1 - this.t) / 1000, lt = this.isLight(this.t);
+      if (lt !== this.light) { this.light = lt; out.push({ type: 'light', on: lt }); }
+      var m = Math.sqrt(this.x * this.x + this.y * this.y), dw = -(this.touch ? DECAY_HOLD : DECAY_FREE) * dt;
+      if (this.touch && m > TILT_FREE) dw += K_TILT * (m - TILT_FREE) / 0.4 * dt * (lt ? LIGHT_MULT : 1);
+      this.t = t1; this._wake(dw, t1, out);
+      while (!this.over && this.k < this.items.length) {            // ほね
+        var it = this.items[this.k]; if (t1 < it.t) break;
+        if (zoneOf(this.x, this.y) === it.dir) { this._item(it, true, Math.max(it.t, Math.min(t1, this._zt || t1)), out); continue; }
+        if (t1 >= it.t + GRACE) { this._item(it, false, t1, out); continue; }
         break;
       }
-      var z = zoneOf(this.x, this.y);
-      if (!n.seen) {                                  // 窓が開いたとき もう そこにいた: 倒す向きなら 早すぎ(外れ)。「とめる」は 先に止まっていてよい
-        n.seen = true; n.from = z;
-        if (inside) { if (n.dir === 'C') this._resolve(n, 'good', -n.w, out); else { n.early = true; this._resolve(n, 'miss', -n.w, out); } continue; }
-      }
-      var pv = n.i > 0 ? this.notes[n.i - 1].dir : null;
-      if (z && z !== n.dir && z !== n.from && z !== pv && n.dir !== 'C') { this._resolve(n, 'miss', null, out); continue; }   // ちがう向きへ倒した(でたらめに回しても合わない)。前の音の向きへ 遅れて着いたのは 数えない
-      if (inside) { var e = t - n.t, a = Math.abs(e); this._resolve(n, a <= PERFECT ? 'perfect' : a <= GOOD ? 'good' : 'ok', e, out); continue; }
-      if (t >= we) { this._resolve(n, n.touched ? 'miss' : 'idle', null, out); continue; }
-      break;
     }
     return out;
   };
-  // 指が動いた(t = その出来事の時刻 ms)
+  // 指が動いた(t = その出来事の時刻)
   Game.prototype.input = function (t, x, y, touch) {
-    var out = [];
-    this.advance(t - 0.001, out);                      // 動く前の位置で t の直前まで
-    this.x = x; this.y = y; this.touch = touch;
-    this.advance(t, out);
+    var out = []; this.advance(t, out); if (this.over) return out;
+    var dx = x - this.x, dy = y - this.y, d = Math.sqrt(dx * dx + dy * dy);
+    if (touch && this.touch && d > 0) {                              // 押したままの動きだけ数える(離して戻るのは 犬にとって楽)
+      var dt = Math.max(4, Math.min(50, t - this.tIn)) / 1000, v = d / dt;
+      this._wake(d * K_MOVE * (1 + (v / V0) * (v / V0)) * (this.isLight(t) ? LIGHT_MULT : 1), t, out);
+    }
+    this.x = x; this.y = y; this.touch = touch; this.tIn = t; this._zt = t;
+    if (!this.over && this.k < this.items.length) {                  // 動いた その時刻で くわえたかを見る
+      var it = this.items[this.k];
+      if (t >= it.t && t < it.t + GRACE && zoneOf(x, y) === it.dir) this._item(it, true, t, out);
+    }
     return out;
   };
-  Game.prototype.percent = function () { return this.max ? Math.round(this.score / (this.notes.length * 100) * 100) : 0; };
-  Game.prototype.progress = function () { return this.k / this.notes.length; };
+  Game.prototype.sleepPct = function () { return Math.round((1 - Math.min(1, this.peak)) * 100); };
+  Game.prototype.progress = function () { return this.k / this.items.length; };
+  // 称号: 0 しのびの親指 / 1 いい親指 / 2 ひやひや親指(ここまでクリア)/ 3 やさしすぎる親指(液晶で負け)/ 4 起こした
+  function title(g) { return g.over === 'woke' ? 4 : g.over === 'lcdover' ? 3 : g.peak < STAGE[0] ? 0 : g.peak < STAGE[1] ? 1 : 2; }
 
-  function rank(pct) { return pct >= 95 ? 0 : pct >= 85 ? 1 : pct >= 70 ? 2 : pct >= 50 ? 3 : 4; }
-
-  var api = { makeChart: makeChart, Game: Game, inZone: inZone, rank: rank, VEC: VEC, rng: rng,
-    K: { ZONE_MAG: ZONE_MAG, CENTER_MAG: CENTER_MAG, PERFECT: PERFECT, GOOD: GOOD, DISTURB_STAGE: DISTURB_STAGE } };
+  var api = { makeChart: makeChart, Game: Game, zoneOf: zoneOf, title: title, VEC: VEC, rng: rng,
+    K: { ZONE_MAG: ZONE_MAG, GRACE: GRACE, LIVES: LIVES, STAGE: STAGE, LIGHT_WARN: LIGHT_WARN } };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.HBGame = api;
 })(typeof window !== 'undefined' ? window : globalThis);
