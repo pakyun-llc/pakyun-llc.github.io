@@ -412,7 +412,9 @@ function over(name, raw, dead, range, dt) {
   // はじめの 1.5 秒は覚えるだけ(その間に出た一番高い値を「ふだん」にする)
   if (liveT < 1.5) { bases[name] = Math.max(b, raw); return 0; }
   const amt = clamp((raw - b - dead) / range);
-  b += (raw - b) * (1 - Math.exp(-dt / (raw < b ? 0.3 : amt > 0 ? 45 : 15)));
+  // 下がる方へ 0.3 秒で追っていた時は、値の ゆれ の「いちばん低い所」をふだんの値として覚えてしまい、ゆれ の山が毎回はみ出していた(ちょっとの動きで効く原因の 1 つ)。1.5 秒に
+  // (はじめの 6 秒だけは前どおり 0.3 秒: 笑いながら始めた人の基準が、すぐ下がって戻るように)
+  b += (raw - b) * (1 - Math.exp(-dt / (raw < b ? (liveT < 6 ? 0.3 : 1.5) : amt > 0 ? 45 : 15)));
   bases[name] = b; return amt;
 }
 // 舌: 下くちびるの下〜あごに、くちびると同じ色の面がどれだけあるか(簡易。アプリでは顔認識の値を使う)
@@ -433,7 +435,39 @@ function readTongue(lm, dt) {
   }
   return { amount: over("tongue", hit / n, 0.14, 0.36, dt), x: hit ? sx / hit : 0 };
 }
-let winkT = [0, 0], tongueT = 0, wBase = 0, rollBase = null, trackT = 0;
+// 確認用(?jitter=1、?jitter=2 で 2 倍): 止まった絵に「本物の顔らしい小さな ゆれ」を足す。大きさは見積もり(実測ではない):
+// 値の ゆれ = ゆっくり変わる雑音(±0.03 前後。口をすぼめる・眉の内側は ゆれ が大きいので ±0.06 / ±0.05)、息で あごが 0.03 上下(4 秒周期)、
+// まばたき 3.5 秒ごと(0.15 秒・左右 0.04 秒ずれ・開けた直後に見開きが +0.12)、首の傾き ±2.5 度(2.5 秒周期)、顔の大きさ ±2%(3.3 秒周期)、手ぶれ ±顔の幅の 1%(2 Hz 前後)。
+// そこへ「ちょっとした顔の動き」(MOVES: 数秒おきに ゆっくり出て引っこむ。少し口が開く +0.08・少し笑う +0.15・眉が少し上がる +0.15・口が少しすぼむ +0.20・目が少し開く +0.10・口が少し片寄る +0.08)と、首が もう ±2.5 度・顔の大きさが もう ±4% ゆっくり動く分を足す
+const MOVES = { jawOpen: 0.08, mouthSmileLeft: 0.15, mouthSmileRight: 0.15, browInnerUp: 0.15, browOuterUpLeft: 0.10, browOuterUpRight: 0.10, mouthPucker: 0.20, eyeWideLeft: 0.10, eyeWideRight: 0.10, mouthLeft: 0.08 };
+const jmove = (k, t, i) => { const v = Math.max(0, Math.sin(t * (0.45 + 0.07 * i) + i * 1.9)); return (MOVES[k] || 0) * JIT * v * v; };
+const JIT = parseFloat(params.get("jitter")) || 0, jn = {};
+function jnoise(k, t, amp) { const j = jn[k] || (jn[k] = { a: Math.random() * 9, b: Math.random() * 9 }); return amp * JIT * (Math.sin(t * 2.1 + j.a) * 0.5 + Math.sin(t * 5.3 + j.b) * 0.3 + Math.sin(t * 11.7 + j.a * 2) * 0.2 + (Math.random() - 0.5) * 0.6); }
+function jitterFace(lm, res, now) {
+  const t = now / 1000, cats = (res.faceBlendshapes && res.faceBlendshapes[0] && res.faceBlendshapes[0].categories) || [];
+  const ph = t % 3.5, blinkL = ph < 0.15 ? 0.9 : 0, blinkR = ph > 0.04 && ph < 0.19 ? 0.85 : 0, after = ph > 0.19 && ph < 0.40 ? 0.12 * JIT : 0;
+  let ci = 0;
+  for (const c of cats) { const n = c.categoryName, amp = n === "mouthPucker" ? 0.06 : n === "browInnerUp" ? 0.05 : n === "jawOpen" ? 0.02 : 0.03;
+    c.score = clamp(c.score + jnoise(n, t, amp) + jmove(n.replace("Right", "Left") in MOVES && n.includes("Right") ? n.replace("Right", "Left") : n, t, n.includes("Right") ? ci - 1 : ci++) + (n === "jawOpen" ? 0.03 * JIT * (0.5 + 0.5 * Math.sin(t * 1.57)) : 0) + (n === "eyeBlinkLeft" ? blinkL : n === "eyeBlinkRight" ? blinkR : 0) + (n.startsWith("eyeWide") ? after : 0)); }
+  const cx = lm[1].x, cy = lm[1].y, asp = video.videoWidth / video.videoHeight, w = lm[454].x - lm[234].x;
+  const ang = 0.044 * JIT * (Math.sin(t * 2.5) + Math.sin(t * 0.52 + 1.0)) + jnoise("roll", t, 0.006), sc = 1 + JIT * (0.02 * Math.sin(t * 1.9) + 0.04 * Math.sin(t * 0.37 + 2.0)), cs = Math.cos(ang), sn = Math.sin(ang);
+  const dx = w * 0.01 * JIT * Math.sin(t * 12.6 + 1) + jnoise("px", t, w * 0.004), dy = w * asp * 0.01 * JIT * Math.sin(t * 10.1) + jnoise("py", t, w * asp * 0.004);
+  for (const q of lm) { const x = (q.x - cx) * asp * sc, y = (q.y - cy) * sc; q.x = cx + (x * cs - y * sn) / asp + dx; q.y = cy + x * sn + y * cs + dy; q.z *= sc; }
+}
+let winkT = [0, 0], tongueT = 0, wBase = 0, rollBase = null, sideBase = null, blinkT = 9, trackT = 0;
+// 型が「効きはじめる」までの あそび(小さな動き・まばたき・手ぶれ・値の ゆれ では効かせない)。
+// [入り, 切れ]: 0〜1 に直した値が「入り」を 0.07 秒こえたら効きはじめ、「切れ」を下回るまで続く。効いている間の値は前と同じ(入りの所から ぽんと効く。ばね が ならす)。
+// だから、わざとやった時の強さ・3コマ の ○ の取りやすさ(0.5 以上)は前のまま。眉は ゆれ が大きいので広め、目は まばたきの反動があるので広め
+const GATE = { open: [0.22, 0.12], brow: [0.32, 0.15], eye: [0.45, 0.20], puck: [0.38, 0.18], smile: [0.25, 0.12], winkL: [0.30, 0.15], winkR: [0.30, 0.15], tilt: [0.20, 0.12], side: [0.25, 0.18], near: [0.20, 0.12] };
+const gOn = {}, gT = {}, gSg = {}; state.dbg = {};
+function gate(k, x, dt, wary = 1, hold = 0.07) {
+  const a = Math.abs(x), [on, off] = GATE[k], sg = x < 0 ? -1 : 1;
+  // 1 こまの間が空いた時に、それだけで「0.07 秒続いた」ことにしない(1 回の観測は 0.05 秒まで)。向きが逆になったら(右へ傾けた → 左へ)入り直し
+  if (!gOn[k]) { gT[k] = a > on * wary ? (gT[k] || 0) + Math.min(dt, 0.05) : 0; if (gT[k] >= hold) { gOn[k] = true; gSg[k] = sg; } }
+  else if (a < off || sg !== gSg[k]) { gOn[k] = false; gT[k] = 0; }
+  const out = gOn[k] ? x : 0;
+  state.dbg[k] = [x, out]; return out;
+}
 function track(now) {
   if (!landmarker || video.readyState < 2 || video.currentTime === lastVideoTime) return;
   lastVideoTime = video.currentTime;
@@ -442,6 +476,7 @@ function track(now) {
   const lm = res.faceLandmarks && res.faceLandmarks[0];
   state.face = !!lm;
   if (!lm) return;
+  if (JIT) jitterFace(lm, res, now);   // 確認用: 本物の顔らしい小さな ゆれ を足す(?jitter=1)
   lastSeen = now; liveT += dt;
   const asp = video.videoWidth / video.videoHeight, q = (a) => [a.x * asp, a.y], mid = (a, b) => [(a.x + b.x) / 2 * asp, (a.y + b.y) / 2];
   pts.eyeL = mid(lm[33], lm[133]); pts.eyeR = mid(lm[362], lm[263]);
@@ -452,27 +487,38 @@ function track(now) {
   const B = {}; for (const c of (res.faceBlendshapes && res.faceBlendshapes[0] && res.faceBlendshapes[0].categories) || []) B[c.categoryName] = c.score;
   const g = (n) => B[n] || 0, T = state.t;
   state.raw = B;
-  T.open = clamp((g("jawOpen") - 0.07) / 0.5);
-  T.brow = Math.max(over("browIn", g("browInnerUp"), 0.10, 0.40, dt), (over("browL", g("browOuterUpLeft"), 0.10, 0.40, dt) + over("browR", g("browOuterUpRight"), 0.10, 0.40, dt)) / 2);
+  // 顔が横を向くほど、目・眉・口の値は当てにならない(片目だけ閉じた・口が片寄った、と出る)。横向きの間は「入り」を最大 1.6 倍きびしく
+  const yawN = (lm[1].x - (lm[234].x + lm[454].x) / 2) / ((lm[454].x - lm[234].x) || 1), wary = 1 + 0.6 * clamp((Math.abs(yawN) - 0.10) / 0.15);
+  state.yaw = yawN;
+  T.open = gate("open", clamp((g("jawOpen") - 0.07) / 0.5), dt);
+  T.brow = gate("brow", Math.max(over("browIn", g("browInnerUp"), 0.10, 0.40, dt), (over("browL", g("browOuterUpLeft"), 0.10, 0.40, dt) + over("browR", g("browOuterUpRight"), 0.10, 0.40, dt)) / 2), dt, wary);
   const bl = g("eyeBlinkLeft"), br = g("eyeBlinkRight");
-  T.eye = Math.max(bl, br) > 0.3 ? 0 : (over("wideL", g("eyeWideLeft"), 0.10, 0.30, dt) + over("wideR", g("eyeWideRight"), 0.10, 0.30, dt)) / 2;
-  T.puck = over("puck", g("mouthPucker"), 0.15, 0.45, dt) * (1 - T.open);
-  T.smile = (over("smileL", g("mouthSmileLeft"), 0.10, 0.50, dt) + over("smileR", g("mouthSmileRight"), 0.10, 0.50, dt)) / 2;
+  // 目を見開く: まばたきの間と、開けた直後 0.25 秒(開けた反動で値がはね上がる)は見ない
+  blinkT = Math.max(bl, br) > 0.3 ? 0 : blinkT + dt;
+  const wide = (over("wideL", g("eyeWideLeft"), 0.10, 0.30, dt) + over("wideR", g("eyeWideRight"), 0.10, 0.30, dt)) / 2;
+  T.eye = gate("eye", blinkT < 0.25 ? 0 : wide, dt, wary);
+  T.puck = gate("puck", over("puck", g("mouthPucker"), 0.15, 0.45, dt) * (1 - T.open), dt, wary);
+  T.smile = gate("smile", (over("smileL", g("mouthSmileLeft"), 0.10, 0.50, dt) + over("smileR", g("mouthSmileRight"), 0.10, 0.50, dt)) / 2, dt, wary);
   // ウインク: 反対の目が開いたまま 0.12 秒続いたら。blendshape の Left は本人の左目 = 映像では右側
+  // (まばたきは両目が ほぼ同時だが、少しずれる。差が 0.35 をこえる瞬間があるので、0.12 秒の持続+下の あそび で落とす)
   const wk = [clamp((bl - br - 0.35) / 0.40) * (br < 0.25 ? 1 : 0), clamp((br - bl - 0.35) / 0.40) * (bl < 0.25 ? 1 : 0)];
   for (const k of [0, 1]) winkT[k] = wk[k] > 0 ? winkT[k] + dt : 0;
-  T.winkR = winkT[0] > 0.12 ? wk[0] : 0; T.winkL = winkT[1] > 0.12 ? wk[1] : 0;
-  const sd = g("mouthLeft") - g("mouthRight"); T.side = Math.sign(sd) * clamp((Math.abs(sd) - 0.08) / 0.25);
+  T.winkR = gate("winkR", winkT[0] > 0.12 ? wk[0] : 0, dt, wary, 0); T.winkL = gate("winkL", winkT[1] > 0.12 ? wk[1] : 0, dt, wary, 0);   // (0.12 秒の持続を もう見ているので、ここでは待たない)
+  // 口を横に: 左右の差。ふだんから片寄っている人がいるので、ふだんの差を覚えて引く(効いていない間に 10 秒で追う)
+  const sdRaw = g("mouthLeft") - g("mouthRight"); if (sideBase === null) sideBase = sdRaw;
+  const sd = sdRaw - sideBase; T.side = gate("side", liveT < 1.5 ? 0 : Math.sign(sd) * clamp((Math.abs(sd) - 0.08) / 0.25), dt, wary);
+  // ふだんの差は、はじめの 1.5 秒は速く(0.5 秒)、あとは 10 秒で追う。効いている間も 6 秒で追う(片寄せたまま落ち着いた人が、いつまでも「効いたまま」にならないように。下の傾き・近づく も同じ)
+  sideBase += (sdRaw - sideBase) * (1 - Math.exp(-dt / (liveT < 1.5 ? 0.5 : T.side === 0 ? 10 : 6)));
   // かしげる: 両目を結ぶ線の傾き。ふだんの角度からの差で見る
   const ex = pts.eyeR[0] - pts.eyeL[0], ey = pts.eyeR[1] - pts.eyeL[1], roll = Math.atan2(ey, ex), el = Math.hypot(ex, ey) || 1;
   if (rollBase === null) rollBase = roll;
-  const dr = roll - rollBase; T.tilt = Math.sign(dr) * clamp((Math.abs(dr) - 0.12) / 0.35);
-  if (T.tilt === 0) rollBase += (roll - rollBase) * (1 - Math.exp(-dt / 15));
+  const dr = roll - rollBase; T.tilt = gate("tilt", Math.sign(dr) * clamp((Math.abs(dr) - 0.12) / 0.35), dt);   // 入りは 0.12 + 0.35 × 0.20 = 0.19 rad(11 度)
+  rollBase += (roll - rollBase) * (1 - Math.exp(-dt / (T.tilt === 0 ? 15 : 6)));
   state.slide = [ex / el, ey / el];
   // 近づく: 顔の幅が、ふだん(8 秒でゆっくり追う)よりどれだけ大きいか
   if (!wBase) wBase = pts.w;
-  T.near = clamp((pts.w / wBase - 1.12) / 0.35);
-  if (T.near === 0) wBase += (pts.w - wBase) * (1 - Math.exp(-dt / 8));
+  T.near = gate("near", clamp((pts.w / wBase - 1.12) / 0.30), dt);   // 入りは顔が 1.18 倍(スマホが少し寄っただけでは効かない)
+  wBase += (pts.w - wBase) * (1 - Math.exp(-dt / (T.near === 0 ? 8 : 6)));
   // 舌: 口が開いている時だけ。0.15 秒続いたら
   const tg = readTongue(lm, dt), tv = T.open > 0.16 ? tg.amount : 0;
   tongueT = tv > 0.2 ? tongueT + dt : 0;
@@ -484,10 +530,11 @@ function track(now) {
 // ---------- いしの かお(石の肌): 顔のどこを石に塗るかを、顔の網から小さな絵(256x256)に描く。塗るのは上の FS ----------
 // 進行(あそぶ の中だけ): じっと STONE_AFTER 秒 → 首から石が上がって石になる → 動いても戻らない → ちがう表情を NEED 種類やると割れ落ちて肌に戻る
 const STONE_AFTER = parseFloat(params.get("stoneAfter")) || 5;   // じっとしている秒数(ユウキさんの数字。?stoneAfter=3 で確認用に変える)
-const STONE_HINT = Math.min(1.8, STONE_AFTER * 0.4), STONE_NEED = 5, STONE_GRACE = 4;   // 終わりぎわの前ぶれの秒数 / 割るのに要る表情の種類 / 割れた直後だけ足す秒数
+const STONE_HINT = Math.min(1.8, STONE_AFTER * 0.4), STONE_NEED = 5, STONE_GRACE = 4;
+const STILL_SPEED = 0.45;   // ならした後の頭の速さが これ(顔の幅 / 秒)をこえたら「動いている」。スマホを持って見ているだけなら 0.1 前後のはず(見積もり)   // 終わりぎわの前ぶれの秒数 / 割るのに要る表情の種類 / 割れた直後だけ足す秒数
 // 数える表情 9 種(ウインクは左右で 1 種。ベロは判定があてにならないので数えない)
 const KINDS = [["open"], ["brow"], ["eye"], ["puck"], ["smile"], ["winkL", "winkR"], ["tilt"], ["side"], ["near"]];
-const K = state.stoneSkin = { amt: 0, skin: [0.6, 0.45, 0.4], gl: null, phase: "skin", still: 0, turn: 0, crack: 0, brk: 0, kinds: [], hold: KINDS.map(() => 0), speed: 0, last: null, bits: [], knocks: 0, snaps: 0, falls: 0, stall: 0, playT: 0, tell: false, tipUsed: false, tipT: 0 };
+const K = state.stoneSkin = { amt: 0, skin: [0.6, 0.45, 0.4], gl: null, phase: "skin", still: 0, turn: 0, crack: 0, brk: 0, kinds: [], hold: KINDS.map(() => 0), speed: 0, last: null, bits: [], knocks: 0, snaps: 0, falls: 0, stall: 0, playT: 0, tell: false, tipUsed: false, tipT: 0, why: "" };
 // 髪の切り抜き(MediaPipe の HairSegmenter。Apache-2.0、約 0.78MB。顔を見つける仕組みと同じ置き場 = Google の storage から読む。映像は端末の外へ出ない)。
 // 土になりかける時に はじめて読む(ふだんの あそぶ は何も負担しない)。読めない・こわれた時は何もしないで、前のやり方(暗い所だけ つぶす)のまま
 const HAIR_MODEL = params.get("hair") === "bad" ? "https://storage.googleapis.com/mediapipe-models/image_segmenter/hair_segmenter/float32/latest/nope.tflite"   // ?hair=bad = 読めない時の確認用 / ?hair=0 = 使わない
@@ -528,11 +575,17 @@ let clayTold = false; try { clayTold = localStorage.getItem("clayTold") === "1";
 function stoneTip() { const i = [1, 0, 4, 3, 6, 8, 7, 2, 5].find((k) => !K.kinds.includes(k)); return (STEPS.find((st) => st[0][0] === KINDS[i][0]) || STEPS[0])[1]; }
 function skinReset(stone) { H.has = false; H.on = 0; Object.assign(K, { stall: 0, playT: 0, tell: false, tipUsed: false, tipT: 0, phase: stone ? "stone" : "skin", still: 0, turn: stone ? 1 : 0, crack: 0, brk: 0, kinds: [], hold: KINDS.map(() => 0), speed: 0, last: null, bits: [], amt: 0 }); }
 function skinStep(dt, on) {
-  const t = state.t, expr = Math.max(...CH.filter((k) => k !== "tongue").map((k) => Math.abs(t[k]))), head = clamp((K.speed - 0.35) / 1.2);
+  const t = state.t, moving = CH.filter((k) => k !== "tongue" && Math.abs(t[k]) > 0.02), expr = moving.length ? 1 : 0, head = K.speed > STILL_SPEED ? 1 : 0;
   let grind = 0;
   if (K.phase === "skin") {
     // 表情が 1 つも効いていなくて、頭もほぼ止まっている間だけ数える。動いたら はじめから
-    K.still = on && liveT > 1.5 && expr < 0.18 && head < 0.15 ? K.still + dt : Math.min(K.still, 0) + (K.still < 0 ? dt : 0);
+    // じっと = 型が 1 つも効いていない(あそび を通った後の値。まばたき・小さな動きは もう 0)+頭が大きく動いていない。
+    // 型が効いたら(わざと顔を動かした)はじめから。頭が少し動いただけなら、止めて少し巻き戻すだけ(手ぶれで毎回 0 に戻らないように)
+    if (K.still < 0) K.still = Math.min(0, K.still + dt);   // 割れた直後の待ち時間(何をしていても進む)
+    else if (!on || liveT <= 1.5) { K.still = 0; K.why = !on ? "no face" : "learning"; }
+    else if (expr) { K.still = 0; K.why = "warp " + moving.join(","); }
+    else if (head) { K.still = Math.max(0, K.still - dt * 1.5); K.why = "head " + K.speed.toFixed(2); }
+    else K.still += dt;
     // 前ぶれ: 終わりぎわに、首から石が少しだけ上がってきて、小さく ごりごり 鳴る(動けば引っこむ)。数字も字も出さない
     const hint = clamp((K.still - (STONE_AFTER - STONE_HINT)) / STONE_HINT);
     K.turn += (0.32 * hint - K.turn) * Math.min(1, dt * (hint > 0 ? 6 : 8)); grind = 0.3 * hint;
@@ -640,10 +693,12 @@ function skinTrack(lm, dt) {
     for (const k of [tr[t], tr[t + 1], tr[t + 2]]) { nor[k * 4] += nx; nor[k * 4 + 1] += ny; nor[k * 4 + 2] += nz; } }
   for (let i = 0; i < NV; i++) { const l = Math.hypot(nor[i * 4], nor[i * 4 + 1], nor[i * 4 + 2]) || 1; nor[i * 4] = nor[i * 4] / l * 0.5 + 0.5; nor[i * 4 + 1] = nor[i * 4 + 1] / l * 0.5 + 0.5; nor[i * 4 + 2] = nor[i * 4 + 2] / l * 0.5 + 0.5; nor[i * 4 + 3] = 1; }
   K.gl.ready = true;
-  // 頭の動きの速さ(顔の幅 / 秒 + 傾きの変わる速さ)。じっとしているかの判定に使う
+  // 頭の動きの速さ(顔の幅 / 秒 + 傾きの変わる速さ)。じっとしているかの判定に使う。
+  // 手ぶれ・点の ふるえ を速さに数えないよう、先に位置と傾きを 0.25 秒で ならしてから、その動きの速さを見る(さらに 0.3 秒で ならす)
   const roll = Math.atan2(lm[263].y - lm[33].y, (lm[263].x - lm[33].x) * asp);
-  if (K.last) { const sp = Math.hypot(cx - K.last[0], cy - K.last[1]) / w / dt + Math.abs(roll - K.last[2]) / dt; K.speed += (sp - K.speed) * Math.min(1, dt * 8); }
-  K.last = [cx, cy, roll];
+  if (K.last) { const e = 1 - Math.exp(-dt / 0.25), nx = K.last[0] + (cx - K.last[0]) * e, ny = K.last[1] + (cy - K.last[1]) * e, nr = K.last[2] + (roll - K.last[2]) * e;
+    const sp = Math.hypot(nx - K.last[0], ny - K.last[1]) / w / dt + Math.abs(nr - K.last[2]) / dt; K.speed += (sp - K.speed) * (1 - Math.exp(-dt / 0.3)); K.last = [nx, ny, nr]; }
+  else K.last = [cx, cy, roll];
   const d = pctx.getImageData(0, 0, probe.width, probe.height).data, PW = probe.width, PH = probe.height, e = liveT < 0.5 ? 1 : Math.min(1, dt * 3), c = [0, 0, 0];
   for (const i of [50, 280, 151, 205, 425]) { const k = (clamp(Math.round(lm[i].y * PH), 0, PH - 1) * PW + clamp(Math.round(lm[i].x * PW), 0, PW - 1)) * 4; for (let j = 0; j < 3; j++) c[j] += d[k + j] / 255 / 5; }
   for (let j = 0; j < 3; j++) K.skin[j] += (c[j] - K.skin[j]) * e;
@@ -1092,7 +1147,9 @@ function frame(now) {
   frames++; if (now - fpsT > 1000) { state.fps = frames; frames = 0; fpsT = now; }
   ui(dt, on);
   if (params.has("test")) { $("kdebug").style.display = "block";
-    $("kdebug").textContent = `fps ${state.fps} face ${state.face}\n` + CH.map((k) => `${k} ${state.t[k].toFixed(2)}`).join("\n") + `\npings ${state.pings}\n${state.err}`; }
+    // 型ごと: もとの値(0〜1)→ あそび を通った後の値。その下に ふだんの値(覚えた基準)、じっと の秒数と、最後に止めた理由
+    $("kdebug").textContent = `fps ${state.fps} face ${state.face} yaw ${(state.yaw || 0).toFixed(2)}\n` + CH.map((k) => `${k} ${state.dbg[k] ? state.dbg[k][0].toFixed(2) + " > " : ""}${state.t[k].toFixed(2)}`).join("\n")
+      + `\nbase ${Object.entries(bases).map(([k, v], i) => (i % 3 ? " " : "\n ") + k + " " + v.toFixed(2)).join("")}\nstill ${K.still.toFixed(1)}/${STONE_AFTER} ${K.phase} speed ${K.speed.toFixed(2)}\nwhy ${K.why || ""}\nkinds ${K.kinds.length} hair ${H.has ? "on" : H.failed ? "failed" : H.loading ? "loading" : "-"}\n${state.err}`; }
 }
 requestAnimationFrame(frame);
 // 字は使う文字だけ先に読んでおく(途中で別の字に化けないように)
@@ -1133,7 +1190,7 @@ function toStart() {
   state.phase = "start"; state.only = null; state.face = false; skinReset(false); stopCamera(); if (ac) ac.suspend();
   for (const k of CH) state.t[k] = state.v[k] = vel[k] = last[k] = move[k] = 0;
   for (const k of Object.keys(bases)) delete bases[k];
-  stoneReset(); liveT = 0; rollBase = null; wBase = 0; lastVideoTime = -1; winkT = [0, 0]; tongueT = 0; G.phase = "pre";
+  stoneReset(); liveT = 0; rollBase = null; sideBase = null; blinkT = 9; wBase = 0; for (const k of Object.keys(gOn)) { gOn[k] = false; gT[k] = 0; } lastVideoTime = -1; winkT = [0, 0]; tongueT = 0; G.phase = "pre";
   $("msg").textContent = ""; show("start");
 }
 function soundLabel() { $("setSound").textContent = state.soundOff ? W.soundOff : W.soundOn; }
