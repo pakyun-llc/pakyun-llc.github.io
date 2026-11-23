@@ -459,8 +459,15 @@ let winkT = [0, 0], tongueT = 0, wBase = 0, rollBase = null, sideBase = null, bl
 // [入り, 切れ]: 0〜1 に直した値が「入り」を 0.07 秒こえたら効きはじめ、「切れ」を下回るまで続く。効いている間の値は前と同じ(入りの所から ぽんと効く。ばね が ならす)。
 // だから、わざとやった時の強さ・3コマ の ○ の取りやすさ(0.5 以上)は前のまま。眉は ゆれ が大きいので広め、目は まばたきの反動があるので広め
 const GATE = { open: [0.22, 0.12], brow: [0.32, 0.15], eye: [0.45, 0.20], puck: [0.38, 0.18], smile: [0.25, 0.12], winkL: [0.30, 0.15], winkR: [0.30, 0.15], tilt: [0.20, 0.12], side: [0.25, 0.18], near: [0.20, 0.12] };
+// 効きぐあい: 効きはじめた後の強さは、動かした量に合わせる(少し動かしただけで強く効かないように)。
+//   出る強さ = max × ((動かした量 − 切れ) / (1 − 切れ)) ^ p      (動かした量が「切れ」の所で 0、1 で max)
+// p が大きいほど、中くらいの動きが弱くなる(最大は変わらない)。max は型ごとの上限(いまは全部 1 = 前と同じ最大)。次の感想で ここだけ直せるように型ごとに置く
+const CURVE = { open: [1.6, 1], brow: [1.8, 1], eye: [2.0, 1], puck: [1.9, 1], smile: [1.6, 1], winkL: [1.5, 1], winkR: [1.5, 1], tilt: [1.6, 1], side: [1.6, 1], near: [1.6, 1] };
+const curve = (k, m) => { const [pw, mx] = CURVE[k], off = GATE[k][1], a = Math.abs(m); return a <= off ? 0 : (m < 0 ? -1 : 1) * mx * Math.pow((a - off) / (1 - off), pw); };
+state.m = zero();   // 型ごとの「動かした量」(あそび を通った後・効きぐあいを掛ける前)。3コマ の ○・土の種類・じっと は こちらで見る(取りやすさを変えないため)
 const gOn = {}, gT = {}, gSg = {}; state.dbg = {};
 function gate(k, x, dt, wary = 1, hold = 0.07) {
+  if (state.rawForce && k in state.rawForce) x = state.rawForce[k];   // 確認用: あそび と効きぐあいを通る前の値を決め打ちする
   const a = Math.abs(x), [on, off] = GATE[k], sg = x < 0 ? -1 : 1;
   // 1 こまの間が空いた時に、それだけで「0.07 秒続いた」ことにしない(1 回の観測は 0.05 秒まで)。向きが逆になったら(右へ傾けた → 左へ)入り直し
   if (!gOn[k]) { gT[k] = a > on * wary ? (gT[k] || 0) + Math.min(dt, 0.05) : 0; if (gT[k] >= hold) { gOn[k] = true; gSg[k] = sg; } }
@@ -523,6 +530,9 @@ function track(now) {
   const tg = readTongue(lm, dt), tv = T.open > 0.16 ? tg.amount : 0;
   tongueT = tv > 0.2 ? tongueT + dt : 0;
   T.tongue += ((tongueT > 0.15 ? tv : 0) - T.tongue) * 0.5; state.tongueX = tg.x;
+  // ここまでの T は「動かした量」。覚えておいてから、効きぐあいを掛けて「出る強さ」にする(変形・音・字は出る強さで動く)
+  for (const k of Object.keys(GATE)) { state.m[k] = T[k]; T[k] = curve(k, T[k]); state.dbg[k][2] = T[k]; }
+  state.m.tongue = T.tongue;
   if (state.mode === "stone") stoneTrack(lm, dt);
   if (state.mode === "free") skinTrack(lm, dt);
 }
@@ -575,7 +585,7 @@ let clayTold = false; try { clayTold = localStorage.getItem("clayTold") === "1";
 function stoneTip() { const i = [1, 0, 4, 3, 6, 8, 7, 2, 5].find((k) => !K.kinds.includes(k)); return (STEPS.find((st) => st[0][0] === KINDS[i][0]) || STEPS[0])[1]; }
 function skinReset(stone) { H.has = false; H.on = 0; Object.assign(K, { stall: 0, playT: 0, tell: false, tipUsed: false, tipT: 0, phase: stone ? "stone" : "skin", still: 0, turn: stone ? 1 : 0, crack: 0, brk: 0, kinds: [], hold: KINDS.map(() => 0), speed: 0, last: null, bits: [], amt: 0 }); }
 function skinStep(dt, on) {
-  const t = state.t, moving = CH.filter((k) => k !== "tongue" && Math.abs(t[k]) > 0.02), expr = moving.length ? 1 : 0, head = K.speed > STILL_SPEED ? 1 : 0;
+  const t = state.m, moving = CH.filter((k) => k !== "tongue" && Math.abs(t[k]) > 0.02), expr = moving.length ? 1 : 0, head = K.speed > STILL_SPEED ? 1 : 0;
   let grind = 0;
   if (K.phase === "skin") {
     // 表情が 1 つも効いていなくて、頭もほぼ止まっている間だけ数える。動いたら はじめから
@@ -1011,7 +1021,7 @@ function ui(dt, on) {
 }
 function practice(dt, on) {
   const [keys, todo, name] = STEPS[state.step], main = keys[keys.length - 1] === "tongue" ? ["tongue"] : keys;
-  const val = Math.max(...main.map((k) => Math.abs(state.t[k])));
+  const val = Math.max(...main.map((k) => Math.abs(state.m[k])));
   if (okT > 0) { okT -= dt; if (okT <= 0) nextStep(true); return; }
   put("cap", `${state.step + 1}/${STEPS.length}  ${todo}`);
   waitT += dt; put("sub", !on ? W.show : waitT > 6 ? W.stuck(name) : W.becomes(name));
@@ -1041,7 +1051,7 @@ function game(dt, on) {
   const k = Math.floor(G.t / 5);
   if (k >= 3) return gameEnd();
   if (k !== G.koma) { G.koma = k; G.hold = 0; blip(k === 2 ? 880 : 660); state.only = G.keys.slice(0, k + 1).flat(); }
-  const val = Math.max(...G.keys[k].map((key) => Math.abs(state.t[key])));
+  const val = Math.max(...G.keys[k].map((key) => Math.abs(state.m[key])));   // ○ は「動かした量」で見る(効きぐあいを弱めても取りやすさは同じ)
   G.hold = on && val >= 0.5 ? G.hold + dt : 0;
   if (!G.hits[k] && G.hold > 0.2) { G.hits[k] = true; ping(3 + k * 2); setTimeout(() => ping(6 + k * 2), 110); }
   put("cap", W.panel(k + 1) + todo(k) + (G.hits[k] ? " " + W.hit : "")); put("sub", !on ? W.show : W.becomes(STEPS[G.moves[k]][2]));
@@ -1116,7 +1126,7 @@ function frame(now) {
   const mirror = state.mode === "mirror";
   if (!mirror) try { track(now); } catch (e) { state.err = String(e).slice(0, 160); }
   if (now - lastSeen > 500) state.face = false;   // 映像が止まった時に鳴りっぱなしにしない
-  if (state.force) Object.assign(state.t, zero(), state.force);
+  if (state.force) { Object.assign(state.t, zero(), state.force); Object.assign(state.m, zero(), state.force); }
   if (state.mode === "stone") stoneStep(dt, state.face || !!state.force);
   if (state.only) for (const k of CH) if (!state.only.includes(k)) state.t[k] = 0;   // れんしゅう中は、いまの 1 手だけ効かせる
   // ばね: 行きすぎて戻る(びよん)
@@ -1147,8 +1157,8 @@ function frame(now) {
   frames++; if (now - fpsT > 1000) { state.fps = frames; frames = 0; fpsT = now; }
   ui(dt, on);
   if (params.has("test")) { $("kdebug").style.display = "block";
-    // 型ごと: もとの値(0〜1)→ あそび を通った後の値。その下に ふだんの値(覚えた基準)、じっと の秒数と、最後に止めた理由
-    $("kdebug").textContent = `fps ${state.fps} face ${state.face} yaw ${(state.yaw || 0).toFixed(2)}\n` + CH.map((k) => `${k} ${state.dbg[k] ? state.dbg[k][0].toFixed(2) + " > " : ""}${state.t[k].toFixed(2)}`).join("\n")
+    // 型ごと: もとの値(0〜1)> あそび を通った後の「動かした量」> 効きぐあいを掛けた「出る強さ」。その下に ふだんの値(覚えた基準)、じっと の秒数と、最後に止めた理由
+    $("kdebug").textContent = `fps ${state.fps} face ${state.face} yaw ${(state.yaw || 0).toFixed(2)}\n` + CH.map((k) => `${k} ${state.dbg[k] ? state.dbg[k][0].toFixed(2) + " > " + state.m[k].toFixed(2) + " > " : ""}${state.t[k].toFixed(2)}`).join("\n")
       + `\nbase ${Object.entries(bases).map(([k, v], i) => (i % 3 ? " " : "\n ") + k + " " + v.toFixed(2)).join("")}\nstill ${K.still.toFixed(1)}/${STONE_AFTER} ${K.phase} speed ${K.speed.toFixed(2)}\nwhy ${K.why || ""}\nkinds ${K.kinds.length} hair ${H.has ? "on" : H.failed ? "failed" : H.loading ? "loading" : "-"}\n${state.err}`; }
 }
 requestAnimationFrame(frame);
@@ -1188,7 +1198,7 @@ function stopCamera() { const s = video.srcObject; if (s) { for (const t of s.ge
 // 左上の「もどる」: はじめの画面へ。カメラと音を止め、覚えた「ふだんの顔」も忘れる(次は別の人かもしれない)
 function toStart() {
   state.phase = "start"; state.only = null; state.face = false; skinReset(false); stopCamera(); if (ac) ac.suspend();
-  for (const k of CH) state.t[k] = state.v[k] = vel[k] = last[k] = move[k] = 0;
+  for (const k of CH) state.t[k] = state.m[k] = state.v[k] = vel[k] = last[k] = move[k] = 0;
   for (const k of Object.keys(bases)) delete bases[k];
   stoneReset(); liveT = 0; rollBase = null; sideBase = null; blinkT = 9; wBase = 0; for (const k of Object.keys(gOn)) { gOn[k] = false; gT[k] = 0; } lastVideoTime = -1; winkT = [0, 0]; tongueT = 0; G.phase = "pre";
   $("msg").textContent = ""; show("start");
