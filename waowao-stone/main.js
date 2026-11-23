@@ -22,10 +22,10 @@ const TODO = EN ? ["raise your eyebrows", "open wide", "pucker up", "big smile",
 const STEPS = [["brow"], ["open"], ["puck"], ["smile"], ["eye"], ["winkL", "winkR"], ["tilt"], ["side"], ["near"], ["open", "tongue"]].map((keys, i) => [keys, TODO[i], NAMES[keys[keys.length - 1]]]);
 const W = EN ? { and: " + ", show: "show your face", move: "move your face", becomes: (n) => "→ " + n, stuck: (n) => `→ ${n}. not working? skip it`, nice: "nice", panels: "3 panels", first: "first: ", panel: (k) => `${k}/3 `, ofPanels: (n) => `${n} of 3 panels`, done: (n, m) => `${n} of ${m}`, skipped: "skipped", hit: "ok", miss: "x",
     play: "play", practice: "practice", game: "3 panels", skip: "skip", start: "go", shuffle: "shuffle", again: "again",
-    stone: "stone", unstone: "skin", still: "hold still", strain: "move to crack", mirror: "broken mirror", kinds: ["bumpy", "road mirror", "potato chip"], back: "back", settings: "settings", soundOn: "sound: on", soundOff: "sound: off", cam: "starting the camera", prep: "getting ready to find your face", denied: "Camera access is off. Allow it in your browser settings, then tap again.", fail: "Couldn't use the camera. Tap again." }
+    tryStill: "try holding still", other: "make a different face", still: "hold still", strain: "move to crack", mirror: "broken mirror", kinds: ["bumpy", "road mirror", "potato chip"], back: "back", settings: "settings", soundOn: "sound: on", soundOff: "sound: off", cam: "starting the camera", prep: "getting ready to find your face", denied: "Camera access is off. Allow it in your browser settings, then tap again.", fail: "Couldn't use the camera. Tap again." }
   : { and: " と ", show: "かおを うつして", move: "かおを うごかす", becomes: (n) => n + "に なる", stuck: (n) => `${n}に なる。だめなら とばす`, nice: "できた", panels: "3コマ", first: "まずは ", panel: (k) => `${k}コマめ `, ofPanels: (n) => `3コマちゅう ${n}コマ`, done: (n, m) => `${n} / ${m} できた`, skipped: "とばした", hit: "○", miss: "×",
     play: "あそぶ", practice: "れんしゅう", game: "3コマ", skip: "とばす", start: "はじめる", shuffle: "かえる", again: "もういっかい",
-    stone: "いし", unstone: "はだ", still: "じっと して", strain: "うごいて わる", mirror: "こわれた かがみ", kinds: ["ボコボコ", "カーブミラー", "ポテチ"], back: "もどる", settings: "せってい", soundOn: "おと: あり", soundOff: "おと: なし", cam: "カメラを起こしています", prep: "顔を見つける準備をしています", denied: "カメラが許可されていません。ブラウザの設定で許可してから、もう一度押してください。", fail: "カメラを使えませんでした。もう一度押してください。" };
+    tryStill: "じっと してみる", other: "ちがう かおを する", still: "じっと して", strain: "うごいて わる", mirror: "こわれた かがみ", kinds: ["ボコボコ", "カーブミラー", "ポテチ"], back: "もどる", settings: "せってい", soundOn: "おと: あり", soundOff: "おと: なし", cam: "カメラを起こしています", prep: "顔を見つける準備をしています", denied: "カメラが許可されていません。ブラウザの設定で許可してから、もう一度押してください。", fail: "カメラを使えませんでした。もう一度押してください。" };
 for (const [id, k] of [["go", "play"], ["goGame", "game"], ["goMirror", "mirror"], ["goSet", "settings"], ["setBack", "back"], ["setHead", "settings"], ["back", "back"], ["sumFree", "play"], ["sumAgain", "again"]]) $(id).textContent = W[k];
 // せってい: 音を出さない(顔の変形だけ)。端末に覚えておく。保存できない環境(プライベート表示など)でも動くように
 let soundOff = false; try { soundOff = localStorage.getItem("soundOff") === "1"; } catch (e) {}
@@ -50,12 +50,20 @@ uniform sampler2D uMirror;  // カーブミラーの写真(まわりとガラス
 uniform vec4 uPhoto;        // 画面の 0〜1 → 写真の 0〜1: (画面 - xy) / zw
 // いしの かお: 顔の肌だけを ざらついた灰色の石に塗りかえる(目・歯・表情は生きたまま)。uSkin = 映像と同じ座標の塗り分け(R 顔 / G 目と口 = ざらつかせない / B 髪のあたり)
 uniform float uStone; uniform sampler2D uSkin; uniform vec3 uSkinC;
+uniform float uTurn, uCrack, uBreak;   // uTurn = 首から上へ石が上がってくる量(0〜1)/ uCrack = ひびの本数(0〜4。途中の値は伸びている途中)/ uBreak = 割れ落ちる(0〜1)
 float lum(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
 float h2(vec2 p){ vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 float n2(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(h2(i), h2(i + vec2(1.0, 0.0)), f.x), mix(h2(i + vec2(0.0, 1.0)), h2(i + vec2(1.0, 1.0)), f.x), f.y); }
 float pit2(vec2 p){ vec2 i = floor(p), f = fract(p) - 0.5; float k = h2(i + 3.0);
   return step(0.70, k) * (1.0 - smoothstep(0.08, 0.10 + 0.20 * k, length(f - (vec2(h2(i + 11.0), h2(i + 23.0)) - 0.5) * 0.5))); }
+// ひび 1 本: A から B へ、ゆらぎながら伸びる。返り値 = (線からの距離(符号つき), その場所の線の太さ。0 なら無い)
+vec2 crackLine(vec2 f, vec2 A, vec2 B, float grow, float seed){
+  vec2 ab = B - A; float len = length(ab); vec2 d = ab / len;
+  float t = dot(f - A, d) / len;
+  float dist = dot(f - A, vec2(-d.y, d.x)) + (n2(vec2(t * 6.0, seed)) - 0.5) * 0.11 + (n2(vec2(t * 21.0, seed + 3.0)) - 0.5) * 0.035;
+  return vec2(dist, (0.0065 + 0.0012 * uCrack) * smoothstep(-0.02, 0.10, t) * smoothstep(grow, grow - 0.30, t) * step(0.001, grow));
+}
 float fall(float r){ float f = 1.0 - r * r; return f * f; }
 vec2 bulge(vec2 p, vec2 c, float R, float k){
   vec2 d = p - c; float r = length(d) / R;
@@ -154,13 +162,13 @@ void main(){
     float g = 0.50 * pow(rel, 1.1);
     g = g < 0.56 ? g : 0.56 + (g - 0.56) * 0.40;                        // 明るい所はつぶす(つやを消す)
     g *= mix(0.62, 1.0, smoothstep(0.22, 0.72, rel));                   // 暗い所(眉・鼻の穴・口・ひげ)は沈める
-    g -= 0.42 * clamp((Lw - Ls) / skinL - 0.05, 0.0, 0.6) * (1.0 - m.g);   // まわりより暗い線は、筆で描いたように太く濃く
+    g -= 0.62 * clamp((Lw - Ls) / skinL - 0.04, 0.0, 0.6) * (1.0 - m.g);   // まわりより暗い線は、筆で描いたように太く濃く
     float soft = 1.0 - m.g;                                             // 目と口は ざらつかせない
     { float xs = g * 11.0, band = (floor(xs) + smoothstep(0.30, 0.70, fract(xs))) / 11.0;   // 明暗を やわらかい段に寄せる(写真の なめらかな陰を、塗った面に)
-      g = mix(g, band, 0.32 * soft); g = mix(g, max(g, 0.115), soft); }  // ひげ・眉の いちばん暗い所は少し持ち上げる(口の中の暗さは残す)
+      g = mix(g, band, 0.45 * soft); g = mix(g, max(g, 0.115), soft); }  // ひげ・眉の いちばん暗い所は少し持ち上げる(口の中の暗さは残す)
     float grain = n2(fl * 105.0) - 0.5, grit = n2(fl * 42.0 + 7.0) - 0.5, lump = n2(fl * 4.6 + 3.0) + 0.6 * n2(fl * 12.0 + 1.0) + 0.35 * n2(fl * 27.0 + 9.0) - 0.975;
     // ざらつき(細かい粒+荒い粒)と、手でこねたような でこぼこ。穴は、でこぼこの谷にだけ まばらに
-    g *= 1.0 + (0.2 + 0.8 * soft) * (0.17 * grain + 0.12 * grit) + soft * (0.30 * (n2(fl * 5.5 + 3.0) - 0.5) + 0.12 * lump) - soft * 0.13 * pit2(fl * 23.0 + 5.0 * n2(fl * 3.0)) * step(0.05, -lump);
+    g *= 1.0 + (0.2 + 0.8 * soft) * (0.13 * grain + 0.10 * grit) + soft * (0.24 * (n2(fl * 5.5 + 3.0) - 0.5) + 0.60 * (n2(fl * 5.5 + 3.0) - n2(fl * 5.5 + vec2(2.80, 2.74))) + 0.30 * (n2(fl * 13.0 + 1.0) - n2(fl * 13.0 + vec2(0.84, 0.80))) + 0.12 * lump) - soft * 0.13 * pit2(fl * 23.0 + 5.0 * n2(fl * 3.0)) * step(0.05, -lump);
     vec3 sum3 = vec3(rgb.r + rgb.g + rgb.b + 0.03, uSkinC.r + uSkinC.g + uSkinC.b + 0.03, 0.0);
     float red = clamp(((rgb.r - rgb.g) / sum3.x - (uSkinC.r - uSkinC.g) / sum3.y) * 9.0, 0.0, 1.0) * m.g;   // くちびる・舌
     vec3 stone = mix(vec3(g) * vec3(1.05, 0.96, 0.99), rgb * (g / max(L, 0.03)), 0.10 + 0.30 * red);
@@ -173,7 +181,32 @@ void main(){
     // 髪: 生えぎわから上の暗い所だけ、つやのない黒いかたまりにつぶす(明るい髪・背景はそのまま)
     float hairy = m.b * (1.0 - smoothstep(0.45, 0.72, L / skinL)) * (1.0 - a);
     vec3 lumpc = vec3(0.07 + 0.30 * Lw) * (1.0 + 0.5 * grain + 0.3 * lump);
-    rgb = mix(mix(rgb, lumpc, hairy * uStone), stone, a * uStone);
+    // ひび: 表情の種類が 1 つ増えるたびに 1 本。目と口にはかからない。顔と一緒に伸びる
+    if (uCrack > 0.001) {
+      float gr = 0.0, bv = 0.0; vec2 c;
+      c = crackLine(fl, vec2(-0.36, -0.84), vec2(0.03, -0.54), clamp(uCrack, 0.0, 1.0) * 1.3, 1.0); gr = max(gr, 1.0 - smoothstep(c.y * 0.45, c.y, abs(c.x))); bv = max(bv, smoothstep(c.y, c.y * 1.3, c.x) * (1.0 - smoothstep(c.y * 1.5, c.y * 2.8, c.x)) * step(0.0005, c.y));
+      c = crackLine(fl, vec2(-0.12, -0.66), vec2(-0.30, -0.58), clamp(uCrack - 0.5, 0.0, 1.0) * 1.3, 2.0); gr = max(gr, 1.0 - smoothstep(c.y * 0.3, c.y * 0.7, abs(c.x)));
+      c = crackLine(fl, vec2(0.54, -0.08), vec2(0.22, 0.36), clamp(uCrack - 1.0, 0.0, 1.0) * 1.3, 3.0); gr = max(gr, 1.0 - smoothstep(c.y * 0.45, c.y, abs(c.x))); bv = max(bv, smoothstep(c.y, c.y * 1.3, c.x) * (1.0 - smoothstep(c.y * 1.5, c.y * 2.8, c.x)) * step(0.0005, c.y));
+      c = crackLine(fl, vec2(-0.56, 0.02), vec2(-0.16, 0.56), clamp(uCrack - 2.0, 0.0, 1.0) * 1.3, 4.0); gr = max(gr, 1.0 - smoothstep(c.y * 0.45, c.y, abs(c.x))); bv = max(bv, smoothstep(c.y, c.y * 1.3, c.x) * (1.0 - smoothstep(c.y * 1.5, c.y * 2.8, c.x)) * step(0.0005, c.y));
+      c = crackLine(fl, vec2(-0.36, 0.30), vec2(-0.52, 0.48), clamp(uCrack - 2.5, 0.0, 1.0) * 1.3, 5.0); gr = max(gr, 1.0 - smoothstep(c.y * 0.3, c.y * 0.7, abs(c.x)));
+      c = crackLine(fl, vec2(0.50, -0.80), vec2(0.47, -0.32), clamp(uCrack - 3.0, 0.0, 1.0) * 1.3, 6.0); gr = max(gr, 1.0 - smoothstep(c.y * 0.45, c.y, abs(c.x))); bv = max(bv, smoothstep(c.y, c.y * 1.3, c.x) * (1.0 - smoothstep(c.y * 1.5, c.y * 2.8, c.x)) * step(0.0005, c.y));
+      c = crackLine(fl, vec2(0.10, 0.62), vec2(0.34, 0.28), clamp(uCrack - 3.4, 0.0, 1.0) * 1.3, 7.0); gr = max(gr, 1.0 - smoothstep(c.y * 0.3, c.y * 0.7, abs(c.x)));
+      float keep = 1.0 - smoothstep(0.15, 0.6, m.g);
+      stone = stone * (1.0 - 0.74 * gr * keep) + vec3(0.15) * bv * keep * (1.0 - gr);
+    }
+    // 石になる時: 首から上へ上がってくる(境目は少し欠けた 1 本の線。すぐ下に石の厚みの影)
+    float th = clamp(0.60 - fl.y * 0.52, 0.0, 1.0) * 0.92 + 0.08 * n2(fl * 7.0), tn = uTurn * 1.05;
+    float up1 = step(th, tn); stone *= mix(0.62, 1.0, smoothstep(th + 0.003, th + 0.022, tn));
+    // 割れ落ちる時: かけらの区切りごとに はがれる(口のまわりから先に)。残っているかけらの縁は暗い溝
+    if (uBreak > 0.001) {
+      vec2 x = fl * 3.3, ni = floor(x), nf = fract(x), r1 = vec2(0.0), r2 = vec2(0.0); float d1 = 8.0, d2 = 8.0, id = 0.0;
+      for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) { vec2 gI = vec2(float(i), float(j)), cI = ni + gI, r = gI + vec2(h2(cI), h2(cI + 17.0)) - nf; float dd = dot(r, r);
+        if (dd < d1) { d2 = d1; r2 = r1; d1 = dd; r1 = r; id = h2(cI + 5.0); } else if (dd < d2) { d2 = dd; r2 = r; } }
+      float edge = dot(0.5 * (r1 + r2), normalize(r2 - r1 + 0.0001));
+      up1 *= step(uBreak * 1.15, 0.55 * id + 0.45 * clamp(length(fl - vec2(0.0, 0.15)) * 0.8, 0.0, 1.0) + 0.05);
+      stone *= 1.0 - 0.8 * (1.0 - smoothstep(0.02, 0.06, edge));
+    }
+    rgb = mix(mix(rgb, lumpc, hairy * uStone * up1), stone, a * uStone * up1);
   }
   gl_FragColor = vec4(rgb, 1.0);
 }`;
@@ -188,7 +221,7 @@ gl.linkProgram(prog); gl.useProgram(prog);
 const quad = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, quad);
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
 gl.enableVertexAttribArray(0); gl.bindAttribLocation(prog, 0, "a"); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-const U = {}; for (const n of ["uTex", "uCover", "uAspect", "uOpen", "uBrow", "uEye", "uPuck", "uSmile", "uWinkL", "uWinkR", "uSide", "uNear", "uTongue", "uSlide", "uEyeL", "uEyeR", "uFore", "uNose", "uMouth", "uChin", "uW", "uKind", "uVA", "uDents", "uMirror", "uPhoto", "uStone", "uSkin", "uSkinC"]) U[n] = gl.getUniformLocation(prog, n);
+const U = {}; for (const n of ["uTex", "uCover", "uAspect", "uOpen", "uBrow", "uEye", "uPuck", "uSmile", "uWinkL", "uWinkR", "uSide", "uNear", "uTongue", "uSlide", "uEyeL", "uEyeR", "uFore", "uNose", "uMouth", "uChin", "uW", "uKind", "uVA", "uDents", "uMirror", "uPhoto", "uStone", "uSkin", "uSkinC", "uTurn", "uCrack", "uBreak"]) U[n] = gl.getUniformLocation(prog, n);
 // 0 番 = カメラの映像、1 番 = カーブミラーの写真(読めるまでは透明な 1 点)
 for (const unit of [gl.TEXTURE1, gl.TEXTURE0]) {
   gl.activeTexture(unit); gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
@@ -419,11 +452,78 @@ function track(now) {
   tongueT = tv > 0.2 ? tongueT + dt : 0;
   T.tongue += ((tongueT > 0.15 ? tv : 0) - T.tongue) * 0.5; state.tongueX = tg.x;
   if (state.mode === "stone") stoneTrack(lm, dt);
-  if (state.skin) skinTrack(lm, dt);
+  if (state.mode === "free") skinTrack(lm, dt);
 }
 
 // ---------- いしの かお(石の肌): 顔のどこを石に塗るかを、顔の網から小さな絵(256x256)に描く。塗るのは上の FS ----------
-const K = state.stoneSkin = { amt: 0, skin: [0.6, 0.45, 0.4], gl: null };
+// 進行(あそぶ の中だけ): じっと STONE_AFTER 秒 → 首から石が上がって石になる → 動いても戻らない → ちがう表情を NEED 種類やると割れ落ちて肌に戻る
+const STONE_AFTER = parseFloat(params.get("stoneAfter")) || 5;   // じっとしている秒数(ユウキさんの数字。?stoneAfter=3 で確認用に変える)
+const STONE_HINT = Math.min(1.8, STONE_AFTER * 0.4), STONE_NEED = 5, STONE_GRACE = 4;   // 終わりぎわの前ぶれの秒数 / 割るのに要る表情の種類 / 割れた直後だけ足す秒数
+// 数える表情 9 種(ウインクは左右で 1 種。ベロは判定があてにならないので数えない)
+const KINDS = [["open"], ["brow"], ["eye"], ["puck"], ["smile"], ["winkL", "winkR"], ["tilt"], ["side"], ["near"]];
+const K = state.stoneSkin = { amt: 0, skin: [0.6, 0.45, 0.4], gl: null, phase: "skin", still: 0, turn: 0, crack: 0, brk: 0, kinds: [], hold: KINDS.map(() => 0), speed: 0, last: null, bits: [], knocks: 0, snaps: 0, falls: 0, stall: 0, playT: 0 };
+let turnedOnce = false;
+// まだ数えていない動き(判定が確かな順)の、れんしゅう用の言い方
+function stoneTip() { const i = [1, 0, 4, 3, 6, 8, 7, 2, 5].find((k) => !K.kinds.includes(k)); return (STEPS.find((st) => st[0][0] === KINDS[i][0]) || STEPS[0])[1]; }
+function skinReset(stone) { Object.assign(K, { stall: 0, playT: 0, phase: stone ? "stone" : "skin", still: 0, turn: stone ? 1 : 0, crack: 0, brk: 0, kinds: [], hold: KINDS.map(() => 0), speed: 0, last: null, bits: [], amt: 0 }); }
+function skinStep(dt, on) {
+  const t = state.t, expr = Math.max(...CH.filter((k) => k !== "tongue").map((k) => Math.abs(t[k]))), head = clamp((K.speed - 0.35) / 1.2);
+  let grind = 0;
+  if (K.phase === "skin") {
+    // 表情が 1 つも効いていなくて、頭もほぼ止まっている間だけ数える。動いたら はじめから
+    K.still = on && liveT > 1.5 && expr < 0.18 && head < 0.15 ? K.still + dt : Math.min(K.still, 0) + (K.still < 0 ? dt : 0);
+    // 前ぶれ: 終わりぎわに、首から石が少しだけ上がってきて、小さく ごりごり 鳴る(動けば引っこむ)。数字も字も出さない
+    const hint = clamp((K.still - (STONE_AFTER - STONE_HINT)) / STONE_HINT);
+    K.turn += (0.32 * hint - K.turn) * Math.min(1, dt * (hint > 0 ? 6 : 8)); grind = 0.3 * hint;
+    if (on) K.playT += dt;
+    if (K.still >= STONE_AFTER) { K.phase = "turning"; turnedOnce = true; }
+  } else if (K.phase === "turning") {
+    K.turn = Math.min(1, K.turn + dt / 1.1); grind = 1;
+    if (K.turn >= 1) { K.phase = "stone"; K.kinds = []; K.hold.fill(0); K.stall = 0; K.knocks++; stoneKnock(); }
+  } else if (K.phase === "stone" && on) {
+    K.stall += dt;
+    // ちがう種類を はっきりやるたびに ひびが 1 本(同じ種類は 1 回だけ数える)。3コマ と同じ見方: 0.5 以上が 0.2 秒
+    KINDS.forEach((keys, i) => {
+      K.hold[i] = Math.max(...keys.map((k) => Math.abs(t[k]))) >= 0.5 ? K.hold[i] + dt : 0;
+      if (K.hold[i] > 0.2 && !K.kinds.includes(i)) { K.kinds.push(i); K.stall = 0;
+        if (K.kinds.length >= STONE_NEED) { K.phase = "breaking"; K.brk = 0; K.falls++; stoneFall(); bitsSpawn(); } else { K.snaps++; stoneSnap(); } }
+    });
+  } else if (K.phase === "breaking") {
+    K.brk += dt / 0.75;
+    if (K.brk >= 1) Object.assign(K, { phase: "skin", turn: 0, crack: 0, brk: 0, kinds: [], still: -STONE_GRACE });   // 割れた直後は少し長く待つ(すぐ また石にならないように)
+  }
+  const want = K.phase === "breaking" ? 4 : Math.min(K.kinds.length, 4); K.crack = K.phase === "skin" ? 0 : Math.min(want, K.crack + dt * 3.5);
+  if (ac && !state.soundOff && V.stone) { const now = ac.currentTime; V.stone.g.gain.setTargetAtTime(grind * (0.10 + 0.14 * K.turn), now, 0.08); V.stone.f.frequency.setTargetAtTime(170 + 190 * K.turn, now, 0.1); }
+}
+// 割れ落ちる石のかけら(平たい石の破片。顔の絵は乗せない): 顔のあたりから外へ押し出されて下へ落ちる
+let BG = null;
+function bitsSpawn() {
+  const w = pts.w, c = [pts.nose[0], pts.nose[1] - 0.1 * w];
+  K.bits = Array.from({ length: 13 }, () => { const a = rnd(0, 6.283), r = Math.sqrt(Math.random()), x = Math.cos(a) * r * 0.5, y = Math.sin(a) * r * 0.72;
+    return { x: c[0] + x * w, y: c[1] + y * w, vx: x * rnd(0.6, 1.6) * w, vy: (y * 0.5 - rnd(0.1, 0.7)) * w, rot: rnd(0, 6.283), spin: rnd(-1.5, 1.5), size: rnd(0.09, 0.19) * w, t: -rnd(0, 0.35) - Math.hypot(x, y) * 0.3,
+      shape: Array.from({ length: 5 }, (_, i) => [i * 1.2566 + rnd(-0.4, 0.4), rnd(0.55, 1)]), shade: rnd(0.40, 0.60) }; });
+}
+function bitsDraw(dt, va, ca) {
+  if (!BG) { const pr = gl.createProgram();
+    gl.attachShader(pr, shader(gl.VERTEX_SHADER, `attribute vec2 aP; attribute vec3 aC; varying vec3 vC; void main(){ vC = aC; gl_Position = vec4(aP, 0.0, 1.0); }`));
+    gl.attachShader(pr, shader(gl.FRAGMENT_SHADER, `precision mediump float; varying vec3 vC;
+      float h(vec2 p){ vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+      void main(){ float g = vC.z * (0.86 + 0.28 * h(floor(vC.xy * 46.0))); gl_FragColor = vec4(vec3(g) * vec3(1.05, 0.96, 0.99), 1.0); }`));
+    gl.bindAttribLocation(pr, 0, "aP"); gl.bindAttribLocation(pr, 1, "aC"); gl.linkProgram(pr); BG = { pr, buf: gl.createBuffer(), data: new Float32Array(13 * 2 * 9 * 5) }; }
+  const cvx = va > ca ? ca / va : 1, cvy = va > ca ? 1 : va / ca, d = BG.data; let n = 0, alive = 0;
+  for (const b of K.bits) { b.t += dt; if (b.t < 0) { alive++; continue; } if (b.t > 1.4) continue; alive++;
+    const x = b.x + b.vx * b.t * 0.6, y = b.y + b.vy * b.t * 0.5 + 4.6 * pts.w * b.t * b.t, an = b.rot + b.spin * b.t;
+    const P = b.shape.map(([a, r]) => [Math.cos(a + an) * r * b.size, Math.sin(a + an) * r * b.size, Math.cos(a), Math.sin(a) * r]);
+    // 先に、少し下へずらした暗い面(石の厚み)。その上に表の面(角ごとに明るさを少し変えて、面の向きを出す)
+    for (const [off, mul] of [[0.22 * b.size, 0.38], [0, 1]]) for (let i = 1; i < 4; i++) for (const [k, q] of [[0, P[0]], [i, P[i]], [i + 1, P[i + 1]]]) {
+      d[n++] = (1 - 2 * (x + q[0] + off * 0.5) / va) / cvx; d[n++] = (1 - 2 * (y + q[1] + off)) / cvy; d[n++] = q[2]; d[n++] = q[3]; d[n++] = b.shade * mul * (k % 2 ? 0.82 : 1.0); } }
+  if (!alive) { K.bits = []; return; }
+  if (!n) return;
+  gl.useProgram(BG.pr); gl.bindBuffer(gl.ARRAY_BUFFER, BG.buf); gl.bufferData(gl.ARRAY_BUFFER, d.subarray(0, n), gl.DYNAMIC_DRAW);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 20, 0); gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 20, 8);
+  gl.drawArrays(gl.TRIANGLES, 0, n / 5);
+  gl.disableVertexAttribArray(1); gl.useProgram(prog); gl.bindBuffer(gl.ARRAY_BUFFER, quad); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+}
 const LIPS = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185];
 function skinSetup() {
   const pr = gl.createProgram();
@@ -452,7 +552,7 @@ function skinSetup() {
 }
 // 新しい映像が来るたび: 塗り分けの形と、肌の色(小さい写しから。ゆっくり追う)
 function skinTrack(lm, dt) {
-  if (!K.gl) try { skinSetup(); } catch (e) { state.err = String(e).slice(0, 160); state.skin = null; return; }
+  if (!K.gl) try { skinSetup(); } catch (e) { state.err = String(e).slice(0, 160); return; }
   const pos = K.gl.pos, asp = video.videoWidth / video.videoHeight;
   for (let i = 0; i < NF; i++) { pos[i * 2] = lm[i].x; pos[i * 2 + 1] = lm[i].y; }
   // 縁: 輪郭から外へ。上(髪)と下(首)は広く、横(耳)は狭く
@@ -462,6 +562,10 @@ function skinTrack(lm, dt) {
     const down = dx * ux + dy * uy, ext = w * (down < 0 ? 0.10 + 0.50 * down * down : 0.10 + 0.50 * down * down);
     pos.set([o.x + dx * ext * 0.5 / asp, o.y + dy * ext * 0.5], (NF + i) * 2); pos.set([o.x + dx * ext / asp, o.y + dy * ext], (NF + NO + i) * 2); }
   K.gl.ready = true;
+  // 頭の動きの速さ(顔の幅 / 秒 + 傾きの変わる速さ)。じっとしているかの判定に使う
+  const roll = Math.atan2(lm[263].y - lm[33].y, (lm[263].x - lm[33].x) * asp);
+  if (K.last) { const sp = Math.hypot(cx - K.last[0], cy - K.last[1]) / w / dt + Math.abs(roll - K.last[2]) / dt; K.speed += (sp - K.speed) * Math.min(1, dt * 8); }
+  K.last = [cx, cy, roll];
   const d = pctx.getImageData(0, 0, probe.width, probe.height).data, PW = probe.width, PH = probe.height, e = liveT < 0.5 ? 1 : Math.min(1, dt * 3), c = [0, 0, 0];
   for (const i of [50, 280, 151, 205, 425]) { const k = (clamp(Math.round(lm[i].y * PH), 0, PH - 1) * PW + clamp(Math.round(lm[i].x * PW), 0, PW - 1)) * 4; for (let j = 0; j < 3; j++) c[j] += d[k + j] / 255 / 5; }
   for (let j = 0; j < 3; j++) K.skin[j] += (c[j] - K.skin[j]) * e;
@@ -761,7 +865,10 @@ function ui(dt, on) {
   const act = CH.filter((k) => Math.abs(state.t[k]) > 0.3 && on).sort((a, b) => Math.abs(state.t[b]) - Math.abs(state.t[a]));
   const key = [...new Set(act.map((k) => nb(NAMES[k])))].slice(0, 2).join(W.and);
   capT += dt; if (key !== capKey && (capT > 0.8 || !capKey)) { capKey = key; capT = 0; }
-  put("cap", !on ? W.show : capKey || W.move); put("sub", "");
+  // 何もしていない時の字: ふだんは かおを うごかす。しばらく遊んでも一度も石になっていなければ じっと してみる(1 回の起動で石になるまで)。
+  // 石の間は ちがう かおを する。8 秒ひびが増えなければ、まだ数えていない動きを 1 つ言う
+  const idle = K.phase === "stone" || K.phase === "turning" ? (K.stall > 8 ? nb(stoneTip()) : W.other) : !turnedOnce && K.playT > 15 ? W.tryStill : W.move;
+  put("cap", !on ? W.show : capKey || idle); put("sub", "");
   $("meter").style.transform = "scaleX(0)";
 }
 function practice(dt, on) {
@@ -856,7 +963,8 @@ function enter(mode) {
   else if (mode === "game") { pickMoves(); gamePre(); $("bM").textContent = W.start; $("bR").textContent = W.shuffle; }
   else if (mode === "stone") { state.only = []; stoneReset(); $("bR").style.visibility = "hidden"; }   // 表情の変形と音は切る。下のボタンは無い
   else if (mode === "mirror") { state.only = []; M.kind = 2; shuffleDents(); $("bR").textContent = W.shuffle; }   // 表情の変形と音は切る
-  else { state.only = null; $("bR").textContent = W.game; $("bL").textContent = state.skin ? W.unstone : W.stone; $("bL").style.visibility = "visible"; }
+  else { state.only = null; $("bR").textContent = W.game; }
+  skinReset(mode === "free" && params.get("skin") === "stone");   // 石は あそぶ の中だけ。3コマ・かがみ に入れば消える(?skin=stone = はじめから石。確認用)
 }
 $("bM").addEventListener("click", () => { if (state.mode === "game" && G.phase === "pre") { G.phase = "count"; G.t = 0; $("bM").style.visibility = $("bR").style.visibility = "hidden"; } });
 $("bR").addEventListener("click", () => { if (state.mode === "practice") { if (okT <= 0) nextStep(false); } else if (state.mode === "game") { if (G.phase === "pre") pickMoves(); } else if (state.mode === "mirror") shuffleDents(); else enter("game"); });
@@ -881,7 +989,8 @@ function frame(now) {
     state.v[k] = clamp(state.v[k] + vel[k] * dt, signed ? -1.15 : -0.1, 1.15);
   }
   updateSound(dt);
-  K.amt += ((state.skin && state.face && state.mode !== "mirror" && state.mode !== "stone" ? 1 : 0) - K.amt) * Math.min(1, dt * 7);
+  if (state.mode === "free") skinStep(dt, on);
+  K.amt += ((state.mode === "free" && state.face && K.turn > 0.001 ? 1 : 0) - K.amt) * Math.min(1, dt * 7);
   if (K.amt > 0.001) skinMask();
   resize();
   if (video.readyState >= 2) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
@@ -891,9 +1000,10 @@ function frame(now) {
   gl.uniform1f(U.uSide, v.side); gl.uniform2f(U.uSlide, state.slide[0] * v.tilt, state.slide[1] * v.tilt);
   for (const [n, k] of [["uEyeL", "eyeL"], ["uEyeR", "eyeR"], ["uFore", "fore"], ["uNose", "nose"], ["uMouth", "mouth"], ["uChin", "chin"]]) gl.uniform2f(U[n], pts[k][0], pts[k][1]);
   gl.uniform1f(U.uW, pts.w);
-  gl.uniform1f(U.uStone, K.amt); gl.uniform3fv(U.uSkinC, K.skin);
+  gl.uniform1f(U.uStone, K.amt); gl.uniform3fv(U.uSkinC, K.skin); gl.uniform1f(U.uTurn, K.turn); gl.uniform1f(U.uCrack, K.crack); gl.uniform1f(U.uBreak, K.phase === "breaking" ? K.brk : 0);
   gl.uniform1f(U.uKind, mirror ? M.kind : -1); if (mirror) mirrorUniforms(ca);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  if (K.bits.length) bitsDraw(dt, va, ca);
   if (state.mode === "stone" && state.face) stoneDraw(va, ca);
   frames++; if (now - fpsT > 1000) { state.fps = frames; frames = 0; fpsT = now; }
   ui(dt, on);
@@ -914,9 +1024,8 @@ async function makeLandmarker(delegate) {
 }
 const ENTRIES = ["go", "goGame", "goMirror", "goSet"];
 let busy = false;
-async function start(mode, skin = params.get("skin") === "stone" ? "stone" : null) {   // ?skin=stone = はじめから石(確認用)
+async function start(mode) {
   if (busy || state.phase === "live") return;
-  state.skin = skin;
   const msg = $("msg"); busy = true; for (const id of ENTRIES) $(id).disabled = true;
   try {
     // 音はタップの中で起こす(iOS)。「おと: なし」の時は鳴らす仕組みごと起こさない
@@ -937,7 +1046,7 @@ function show(id) { for (const k of ["start", "settings", "hud", "sum"]) $(k).st
 function stopCamera() { const s = video.srcObject; if (s) { for (const t of s.getTracks()) t.stop(); video.srcObject = null; } }
 // 左上の「もどる」: はじめの画面へ。カメラと音を止め、覚えた「ふだんの顔」も忘れる(次は別の人かもしれない)
 function toStart() {
-  state.phase = "start"; state.only = null; state.face = false; state.skin = null; K.amt = 0; stopCamera(); if (ac) ac.suspend();
+  state.phase = "start"; state.only = null; state.face = false; skinReset(false); stopCamera(); if (ac) ac.suspend();
   for (const k of CH) state.t[k] = state.v[k] = vel[k] = last[k] = move[k] = 0;
   for (const k of Object.keys(bases)) delete bases[k];
   stoneReset(); liveT = 0; rollBase = null; wBase = 0; lastVideoTime = -1; winkT = [0, 0]; tongueT = 0; G.phase = "pre";
@@ -947,8 +1056,7 @@ function soundLabel() { $("setSound").textContent = state.soundOff ? W.soundOff 
 $("go").addEventListener("click", () => start("free"));
 $("goGame").addEventListener("click", () => start("game"));
 $("goMirror").addEventListener("click", () => start("mirror"));
-// いし = あそぶ の左下で切り替える石の肌(変形も音もそのまま)。前の試作(じっとすると固まって割れる)は入口なし: __kao.start("stone") でだけ開く
-$("bL").addEventListener("click", () => { if (state.mode === "free") { state.skin = state.skin ? null : "stone"; $("bL").textContent = state.skin ? W.unstone : W.stone; } });
+// 石の肌に入口は無い(あそぶ で じっとしていると石になる)。前の試作(固まって割れる石像)も入口なし: __kao.start("stone") でだけ開く
 $("goSet").addEventListener("click", () => show("settings"));
 $("setBack").addEventListener("click", () => show("start"));
 $("setSound").addEventListener("click", () => { state.soundOff = !state.soundOff; try { localStorage.setItem("soundOff", state.soundOff ? "1" : "0"); } catch (e) {} soundLabel(); });
