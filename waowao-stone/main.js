@@ -1,6 +1,6 @@
 // 顔芸(試作): 顔の動きで、顔が変形して音が鳴る。映像は端末の中だけで処理する。
 // 顔の追跡 = MediaPipe Face Landmarker(ブラウザ内)。変形 = WebGL の逆写像。音 = WebAudio の合成。
-import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+import { FaceLandmarker, FilesetResolver, ImageSegmenter } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
 
 const MP = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
 const MODEL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
@@ -49,7 +49,7 @@ uniform vec4 uDents[12];    // (x, y, 半径, 強さ)。意味は種類ごとに
 uniform sampler2D uMirror;  // カーブミラーの写真(まわりとガラスは透明。色は濃さを掛けた後のもの)
 uniform vec4 uPhoto;        // 画面の 0〜1 → 写真の 0〜1: (画面 - xy) / zw
 // 土の顔: 顔を灰色の土のかたまりに塗りかえる(目と口の中だけ生きたまま)。uSkin = 映像と同じ座標の塗り分け(R 顔 / G 目 / B 髪のあたり / A くちびる 0.6 〜 口の中 1)
-uniform float uStone; uniform sampler2D uSkin, uNorm; uniform vec3 uSkinC;   // uNorm = 顔の網の面の向き(映像と同じ座標)
+uniform float uStone, uHairOn, uPxW; uniform sampler2D uSkin, uNorm, uHair; uniform vec3 uSkinC;   // uHair = 髪の切り抜き(6 番)/ uPxW = 顔の幅が画面で何画素か   // uNorm = 顔の網の面の向き(映像と同じ座標)
 uniform float uTurn, uCrack, uBreak;   // uTurn = 首から上へ石が上がってくる量(0〜1)/ uCrack = ひびの本数(0〜4。途中の値は伸びている途中)/ uBreak = 割れ落ちる(0〜1)
 float lum(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
 float h2(vec2 p){ vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
@@ -130,7 +130,7 @@ void main(){
   // 大きい変形から順に。どれも元の顔の位置を基準にしているので、同時に効かせても破綻しにくい
   p = bulge(p, mix(uNose, uFore, 0.35), uW * 1.45, 0.17 * uStone);    // 土の顔: 頭を少し大きく。鼻は大きく、ほお と あご は厚く、口は横に広く(人形の つくり)
   p = bulge(p, uNose - up * 0.10 * uW, uW * 0.40, 0.18 * uStone);
-  p = bulge(p, uMouth, uW * 1.00, 0.09 * uStone);
+  p = bulge(p, uMouth, uW * 1.00, 0.05 * uStone);
   p = bulge(p, uNose, uW * 1.15, 0.5 * uNear);                       // むぎゅ(魚眼)
   { vec2 d = p - uNose; float r = length(d) / (uW * 0.62);           // ずり落ち
     if (r < 1.0) p -= uSlide * uW * 0.34 * fall(r); }
@@ -162,37 +162,51 @@ void main(){
     float eyeIn = smoothstep(0.93, 1.0, m.g), mouthIn = smoothstep(0.96, 1.0, m.a), lipS = smoothstep(0.42, 0.60, m.a) * (1.0 - mouthIn);
     // 土の人: 写真の肌(色むら・ひげ・しわ・くちびるの色)は土の中に消す。残すのは、生きた目と、その人の形だけ。
     // 形は写真の陰ではなく、顔の網の面の向きに左上から光を当てて出す(土で作った胸像のように。面の向きは 256x256 の絵なので、角のない鈍い形になる)
-    vec3 nn = texture2D(uNorm, uv).rgb * 2.0 - 1.0; nn.xy *= 1.6;
-    // 手でこねた でこぼこ は、面の向きそのものを ゆらして作る(光の当たり方が変わるので、粒を散らした写真ではなく、土のかたまりに見える)。目のまわりは ゆらさない
-    nn.xy += (1.0 - smoothstep(0.2, 0.7, m.g)) * (0.26 * (vec2(n2(fl * 6.5 + 3.0), n2(fl * 6.5 + 31.0)) - 0.5) + 0.16 * (vec2(n2(fl * 15.0 + 7.0), n2(fl * 15.0 + 47.0)) - 0.5));
+    // 荒く: 面の向きの絵を引く位置そのものを ゆらす(鼻すじ・ほお・あご の形が いびつ になる)。目のまわりは荒らさない
+    float calm = smoothstep(0.2, 0.7, m.g);
+    vec2 jit = (vec2(n2(fl * 4.0 + 11.0), n2(fl * 4.0 + 41.0)) - 0.5) * 0.055 + (vec2(n2(fl * 11.0 + 5.0), n2(fl * 11.0 + 23.0)) - 0.5) * 0.020;
+    vec3 nn = texture2D(uNorm, uv + jit * (1.0 - calm) * e).rgb * 2.0 - 1.0; nn.xy *= 1.6;
+    // 親指で押した面: 所どころ決まった向きへ傾いた平らな面(境目は やわらかく。くっきり切ると、重ねた紙のような線が出た)。そこへ大きな こぶ・へこみ と、わずかな左右の ゆがみ
+    // (でこぼこ は面の向きそのものを変えるので、光の当たり方が変わる = 粒を散らした写真ではなく、土のかたまりに見える)
+    vec2 thumb = smoothstep(0.34, 0.66, vec2(n2(fl * 3.6 + 2.0), n2(fl * 3.6 + 19.0))) - 0.5;
+    nn.xy += (1.0 - calm) * (0.60 * thumb + 0.55 * (vec2(n2(fl * 5.0 + 3.0), n2(fl * 5.0 + 31.0)) - 0.5) + 0.34 * (vec2(n2(fl * 12.0 + 7.0), n2(fl * 12.0 + 47.0)) - 0.5)) + vec2(0.06, 0.0);
     nn = normalize(nn - vec3(0.0, 0.0, 0.0001));
     float ndl = max(dot(nn, normalize(vec3(-0.50, -0.58, -0.64))), 0.0), rimL = pow(1.0 - clamp(-nn.z, 0.0, 1.0), 2.0);
-    float g = 0.56 * (0.56 + 0.62 * ndl) * (1.0 - 0.26 * rimL);   // 正面で 0.48 くらいの灰色(肌の色を暗く塗ったようには見せない。あくまで灰色の土)
-    // 写真からは、大きな影(鼻の下・あごの下)を少しだけと、本当に暗い穴(鼻の穴・口の線)だけを借りる。眉・ひげは うっすら
+    float g = 0.63 * (0.54 + 0.62 * ndl) * (1.0 - 0.24 * rimL);   // 灰色の土(肌の色を暗く塗ったようには見せない)
+    // 写真から借りるもの: その人の顔の大きな陰と中くらいの陰(ほおの折れ・目の下 = その人らしさ)、本当に暗い穴(鼻の穴・口の線)。眉・ひげは うっすら
     float line = smoothstep(0.08, 0.26, (Lw - Ls) / skinL), dark = 1.0 - smoothstep(0.16, 0.50, Ls / skinL);
-    g *= 1.0 + 0.20 * clamp((0.5 * Lw + 0.5 * Lx) / skinL - 1.0, -0.6, 0.2);   // その人の顔の大きな陰(その人らしさ)
+    g *= 1.0 + 0.36 * clamp((0.5 * Lw + 0.5 * Lx) / skinL - 1.0, -0.45, 0.22) + 0.30 * clamp((Lw - Lx) / skinL, -0.30, 0.15);
     g *= 1.0 - max(0.16 * line, 0.30 * dark);
-    g *= 1.0 + 0.20 * smoothstep(0.15, 0.75, m.g);                                                 // 目のまわりは影を浅く(目が くぼみに沈まないように)
-    g *= 1.0 - 0.22 * smoothstep(0.62, 0.86, m.g) * (1.0 - smoothstep(0.88, 0.98, m.g));          // 目のふちの細い線
-    // 土の肌: 荒い粒(顔の幅の 1/72 と 1/31)を顔じゅう同じ強さで(くちびるの上も、目のふちまで)。目玉と口の中だけは乗せない。
-    // 手でこねた でこぼこ(左上から光の当たった浮き彫り)と、白っぽい砂つぶ
+    // まぶた と くちびる は、丸めた土を貼りつけたように: 盛り上がった帯+まわりの溝。目のまわりは影を浅く(目が くぼみに沈まないように)
+    g *= 1.0 + 0.20 * smoothstep(0.15, 0.75, m.g) + 0.10 * smoothstep(0.25, 0.55, m.g) * (1.0 - smoothstep(0.58, 0.80, m.g));
+    g *= 1.0 - 0.18 * smoothstep(0.62, 0.86, m.g) * (1.0 - smoothstep(0.88, 0.98, m.g));
+    g *= 1.0 + 0.08 * smoothstep(0.50, 0.90, m.a) * (1.0 - mouthIn) - 0.11 * smoothstep(0.22, 0.42, m.a) * (1.0 - smoothstep(0.52, 0.72, m.a));
+    // 土の肌: 荒い粒。大きさは顔の幅で決めるが、画面の上で 3.4 / 8 / 20 画素より細かくはしない(引いて撮っても粒が消えて「灰色に塗った肌」にならないように)
     // (粒は向きを変えた 3 枚の雑音を重ねる。1 枚だと ます目が見えて、モザイクのようになった)
     vec2 f1 = vec2(0.80 * fl.x - 0.60 * fl.y, 0.60 * fl.x + 0.80 * fl.y), f2 = vec2(0.36 * fl.x + 0.93 * fl.y, -0.93 * fl.x + 0.36 * fl.y);
-    float c1 = (n2(fl * 118.0) + n2(f1 * 83.0 + 9.0) + n2(f2 * 151.0 + 4.0)) / 3.0, c2 = 0.5 * (n2(f1 * 37.0 + 7.0) + n2(f2 * 26.0 + 2.0));
-    float sp = clamp((c1 - 0.5) * 2.6, -0.5, 0.5), surf = 1.0 - max(eyeIn, mouthIn);
-    float bump = n2(fl * 5.5 + 3.0) - n2(fl * 5.5 + vec2(2.80, 2.74)), bump2 = n2(fl * 13.0 + 1.0) - n2(fl * 13.0 + vec2(0.84, 0.80));
-    float fine = surf * (1.0 - 0.45 * smoothstep(0.25, 0.7, m.g));                                  // まぶたの上は粒を弱く(目つきが消えないように)
-    g *= 1.0 + fine * (0.11 * sp + 0.19 * (c2 - 0.5) + 0.12 * (n2(f1 * 15.0 + 5.0) - 0.5)) + surf * (0.14 * (n2(f2 * 9.0 + 2.0) - 0.5) + 0.20 * bump + 0.12 * bump2);   // + 土の むら
+    float F1 = min(64.0, uPxW / 3.4), F2 = min(27.0, uPxW / 8.0), F3 = min(11.0, uPxW / 20.0);
+    float c1 = (n2(fl * F1) + n2(f1 * F1 * 0.71 + 9.0) + n2(f2 * F1 * 1.30 + 4.0)) / 3.0, c2 = 0.5 * (n2(f1 * F2 * 1.35 + 7.0) + n2(f2 * F2 + 2.0)), c3 = n2(f1 * F3 + 5.0);
+    float sp = clamp((c1 - 0.5) * 2.8, -0.5, 0.5), surf = 1.0 - max(eyeIn, mouthIn);
+    float fine = surf * (1.0 - 0.5 * calm);                                                         // まぶたの上は弱く(目つきが消えないように)
+    // 所どころ: 穴だらけの所(patchP)と、乾いて細かく ひび割れた所(patchC)
+    float patchP = smoothstep(0.50, 0.68, n2(fl * 2.6 + 8.0)), patchC = smoothstep(0.52, 0.70, n2(fl * 2.1 + 27.0));
+    float pores = pit2(f1 * F2 * 1.25 + 9.0 * vec2(n2(fl * 6.0), n2(fl * 6.0 + 14.0))), crust = 1.0 - smoothstep(0.0, 0.035, abs(n2(fl * 13.0 + 3.0) - 0.5));
+    g *= 1.0 + fine * (0.13 * sp + 0.17 * (c2 - 0.5) + 0.12 * (c3 - 0.5)) + surf * 0.10 * (n2(f2 * 7.0 + 2.0) - 0.5) - fine * (0.16 * pores * patchP + 0.18 * crust * patchC);
+    g += fine * 0.07 * smoothstep(0.15, 0.40, sp) * ndl;                                            // 出っぱりに乗った白っぽい土ぼこり
     vec3 sum3 = vec3(rgb.r + rgb.g + rgb.b + 0.03, uSkinC.r + uSkinC.g + uSkinC.b + 0.03, 0.0);
-    vec3 stone = vec3(g) * vec3(1.02, 1.0, 0.97);                                                  // 乾いた土の色(くちびるも同じ土)
-    // 目玉・歯・口の中は生きたまま(色を 6 割ぬく)
+    vec3 stone = vec3(g) * mix(vec3(1.0, 1.0, 0.99), vec3(1.07, 0.99, 0.90), 0.5 * n2(fl * 3.1 + 6.0));   // 灰色の土。所どころ黄土がかる
+    // 目玉・歯・口の中は生きたまま(色を半分ぬく)
     stone = mix(stone, mix(rgb, vec3(L), 0.5) * mix(1.0, 1.12, eyeIn), 0.92 * max(eyeIn, mouthIn));
-    // 顔の外(耳・首)は、肌に近い色の所だけ石にする
+    // 顔の外(耳・首)は、肌に近い色の所だけ土にする。境目は欠けた形に
     float sim = (1.0 - smoothstep(0.05, 0.12, length(rgb.rg / sum3.x - uSkinC.rg / sum3.y))) * smoothstep(0.30, 0.50, L / skinL);
-    float a = max(smoothstep(0.0, 0.5, m.r) * mix(sim, 1.0, smoothstep(0.90, 0.99, m.r)), smoothstep(0.55, 0.9, m.b) * sim);   // 生えぎわのすぐ上に出ている おでこ も土に(広げると、肌色に近い壁や天井まで土になった)
-    // 髪: 生えぎわから上の暗い所だけ、つやのない黒いかたまりにつぶす(明るい髪・背景はそのまま)
-    float hairy = m.b * (1.0 - smoothstep(0.34, 0.60, L / skinL)) * (1.0 - a);
-    vec3 lumpc = vec3(0.06 + 0.22 * Lw) * (1.0 + 0.7 * sp + 0.5 * (c2 - 0.5));   // けばだった黒いかたまり
+    float a = max(smoothstep(0.12, 0.42, m.r + 0.30 * (n2(fl * 9.0 + 1.0) - 0.5) * (1.0 - smoothstep(0.90, 0.99, m.r))) * mix(sim, 1.0, smoothstep(0.90, 0.99, m.r)), smoothstep(0.55, 0.9, m.b) * sim);
+    // 髪: 髪の切り抜き(uHair)が使える時は、髪ぜんぶを けばだった黒い土のかたまりに(明るい髪でも)。使えない間は前のやり方 = 生えぎわから上の暗い所だけを つぶす
+    float hmass = smoothstep(0.48, 0.62, texture2D(uHair, uv).r + 0.10 * (c2 - 0.5)) * uHairOn * surf;
+    // 髪の切り抜きがある時は、顔と髪のあいだに残る おでこ(生えぎわの上)も土にする(髪でなく、肌にやや近い色の所)
+    a = max(a, uHairOn * smoothstep(0.35, 0.70, m.b) * (1.0 - smoothstep(0.10, 0.24, length(rgb.rg / sum3.x - uSkinC.rg / sum3.y))));
+    float hairy = m.b * (1.0 - smoothstep(0.34, 0.60, L / skinL)) * (1.0 - a) * (1.0 - uHairOn);
+    vec3 lumpc = vec3(0.06 + 0.22 * Lw) * (1.0 + 0.7 * sp + 0.5 * (c2 - 0.5));
+    vec3 hairC = vec3(0.155, 0.150, 0.143) * (1.0 + 0.45 * sp + 0.5 * (c2 - 0.5) + 0.6 * (c3 - 0.5)) * (1.0 + 0.5 * clamp(-fl.y - 0.55, 0.0, 0.6));
     // ひび: 表情の種類が 1 つ増えるたびに 1 本。目と口にはかからない。顔と一緒に伸びる
     if (uCrack > 0.001) {
       float gr = 0.0, bv = 0.0; vec2 c;
@@ -218,7 +232,7 @@ void main(){
       up1 *= step(uBreak * 1.15, 0.55 * id + 0.45 * clamp(length(fl - vec2(0.0, 0.15)) * 0.8, 0.0, 1.0) + 0.05);
       stone *= 1.0 - 0.8 * (1.0 - smoothstep(0.02, 0.06, edge));
     }
-    rgb = mix(mix(rgb, lumpc, hairy * uStone * up1), stone, a * uStone * up1);
+    rgb = mix(mix(mix(rgb, lumpc, hairy * uStone * up1), stone, a * uStone * up1), hairC, hmass * uStone * up1);
   }
   gl_FragColor = vec4(rgb, 1.0);
 }`;
@@ -233,14 +247,14 @@ gl.linkProgram(prog); gl.useProgram(prog);
 const quad = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, quad);
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
 gl.enableVertexAttribArray(0); gl.bindAttribLocation(prog, 0, "a"); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-const U = {}; for (const n of ["uTex", "uCover", "uAspect", "uOpen", "uBrow", "uEye", "uPuck", "uSmile", "uWinkL", "uWinkR", "uSide", "uNear", "uTongue", "uSlide", "uEyeL", "uEyeR", "uFore", "uNose", "uMouth", "uChin", "uW", "uKind", "uVA", "uDents", "uMirror", "uPhoto", "uStone", "uSkin", "uNorm", "uSkinC", "uTurn", "uCrack", "uBreak"]) U[n] = gl.getUniformLocation(prog, n);
+const U = {}; for (const n of ["uTex", "uCover", "uAspect", "uOpen", "uBrow", "uEye", "uPuck", "uSmile", "uWinkL", "uWinkR", "uSide", "uNear", "uTongue", "uSlide", "uEyeL", "uEyeR", "uFore", "uNose", "uMouth", "uChin", "uW", "uKind", "uVA", "uDents", "uMirror", "uPhoto", "uStone", "uSkin", "uNorm", "uHair", "uHairOn", "uPxW", "uSkinC", "uTurn", "uCrack", "uBreak"]) U[n] = gl.getUniformLocation(prog, n);
 // 0 番 = カメラの映像、1 番 = カーブミラーの写真(読めるまでは透明な 1 点)
 for (const unit of [gl.TEXTURE1, gl.TEXTURE0]) {
   gl.activeTexture(unit); gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
   for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
   if (unit === gl.TEXTURE1) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
 }
-gl.uniform1i(U.uTex, 0); gl.uniform1i(U.uMirror, 1); gl.uniform1i(U.uSkin, 4); gl.uniform1i(U.uNorm, 5);
+gl.uniform1i(U.uTex, 0); gl.uniform1i(U.uMirror, 1); gl.uniform1i(U.uSkin, 4); gl.uniform1i(U.uNorm, 5); gl.uniform1i(U.uHair, 6);
 // 写真は 720x1280。透明な所にも色が残っているので、濃さを掛けてから渡す(掛けないと縁に色がにじむ)
 const PHOTO = { w: 720, h: 1280, cx: 0.5007, cy: 0.3078, r: 213 / 1280 };   // ガラスの丸: 写真の 0〜1 での中心と、写真の高さを 1 とした半径
 let mirrorImg;
@@ -474,10 +488,43 @@ const STONE_HINT = Math.min(1.8, STONE_AFTER * 0.4), STONE_NEED = 5, STONE_GRACE
 // 数える表情 9 種(ウインクは左右で 1 種。ベロは判定があてにならないので数えない)
 const KINDS = [["open"], ["brow"], ["eye"], ["puck"], ["smile"], ["winkL", "winkR"], ["tilt"], ["side"], ["near"]];
 const K = state.stoneSkin = { amt: 0, skin: [0.6, 0.45, 0.4], gl: null, phase: "skin", still: 0, turn: 0, crack: 0, brk: 0, kinds: [], hold: KINDS.map(() => 0), speed: 0, last: null, bits: [], knocks: 0, snaps: 0, falls: 0, stall: 0, playT: 0 };
+// 髪の切り抜き(MediaPipe の HairSegmenter。Apache-2.0、約 0.78MB。顔を見つける仕組みと同じ置き場 = Google の storage から読む。映像は端末の外へ出ない)。
+// 土になりかける時に はじめて読む(ふだんの あそぶ は何も負担しない)。読めない・こわれた時は何もしないで、前のやり方(暗い所だけ つぶす)のまま
+const HAIR_MODEL = params.get("hair") === "bad" ? "https://storage.googleapis.com/mediapipe-models/image_segmenter/hair_segmenter/float32/latest/nope.tflite"   // ?hair=bad = 読めない時の確認用 / ?hair=0 = 使わない
+  : "https://storage.googleapis.com/mediapipe-models/image_segmenter/hair_segmenter/float32/latest/hair_segmenter.tflite";
+const HAIR_EVERY = 100;   // ミリ秒。毎こまは回さず、切り抜きは次に回すまで使い回す
+const H = state.hair = { seg: null, loading: false, failed: params.get("hair") === "0", has: false, on: 0, t: 0, ms: 0, runs: 0, tex: null, px: null, delegate: "" };
+async function hairLoad() {
+  if (H.seg || H.loading || H.failed) return; H.loading = true;
+  try { const files = await FilesetResolver.forVisionTasks(MP);
+    const mk = (delegate) => ImageSegmenter.createFromOptions(files, { baseOptions: { modelAssetPath: HAIR_MODEL, delegate }, runningMode: "VIDEO", outputConfidenceMasks: true, outputCategoryMask: false });
+    try { H.seg = await mk("GPU"); H.delegate = "GPU"; } catch (e) { H.seg = await mk("CPU"); H.delegate = "CPU"; }
+  } catch (e) { H.failed = true; }
+  H.loading = false;
+}
+function hairStep(now, dt) {
+  const want = state.mode === "free" && state.phase === "live" && (K.phase !== "skin" || K.still > STONE_AFTER - STONE_HINT);
+  if (want && !H.seg) hairLoad();
+  H.on += ((want && H.has && K.turn > 0.001 ? 1 : 0) - H.on) * Math.min(1, dt * 6);
+  if (!want || !H.seg || !state.face || video.readyState < 2 || now - H.t < HAIR_EVERY) return;
+  H.t = now; const t0 = performance.now();
+  try {
+    H.seg.segmentForVideo(video, now, (res) => {
+      const mk = res.confidenceMasks && res.confidenceMasks[res.confidenceMasks.length - 1]; if (!mk) return;   // 最後の 1 枚 = 髪
+      const f = mk.getAsFloat32Array(), w = mk.width, h = mk.height, N = 256; if (!H.px) H.px = new Uint8Array(N * N);
+      for (let y = 0; y < N; y++) { const sy = Math.min(h - 1, Math.floor((y + 0.5) * h / N)) * w; for (let x = 0; x < N; x++) H.px[y * N + x] = f[sy + Math.min(w - 1, Math.floor((x + 0.5) * w / N))] * 255; }
+      gl.activeTexture(gl.TEXTURE6);
+      if (!H.tex) { H.tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, H.tex);
+        for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v); }
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, N, N, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, H.px); gl.activeTexture(gl.TEXTURE0); H.has = true;
+    });
+  } catch (e) { H.failed = true; H.seg = null; H.has = false; state.hairErr = String(e).slice(0, 160); }
+  H.ms += (performance.now() - t0 - H.ms) * (H.runs ? 0.15 : 1); H.runs++;
+}
 let turnedOnce = false;
 // まだ数えていない動き(判定が確かな順)の、れんしゅう用の言い方
 function stoneTip() { const i = [1, 0, 4, 3, 6, 8, 7, 2, 5].find((k) => !K.kinds.includes(k)); return (STEPS.find((st) => st[0][0] === KINDS[i][0]) || STEPS[0])[1]; }
-function skinReset(stone) { Object.assign(K, { stall: 0, playT: 0, phase: stone ? "stone" : "skin", still: 0, turn: stone ? 1 : 0, crack: 0, brk: 0, kinds: [], hold: KINDS.map(() => 0), speed: 0, last: null, bits: [], amt: 0 }); }
+function skinReset(stone) { H.has = false; H.on = 0; Object.assign(K, { stall: 0, playT: 0, phase: stone ? "stone" : "skin", still: 0, turn: stone ? 1 : 0, crack: 0, brk: 0, kinds: [], hold: KINDS.map(() => 0), speed: 0, last: null, bits: [], amt: 0 }); }
 function skinStep(dt, on) {
   const t = state.t, expr = Math.max(...CH.filter((k) => k !== "tongue").map((k) => Math.abs(t[k]))), head = clamp((K.speed - 0.35) / 1.2);
   let grind = 0;
@@ -1023,6 +1070,7 @@ function frame(now) {
   if (state.mode === "free") skinStep(dt, on);
   K.amt += ((state.mode === "free" && state.face && K.turn > 0.001 ? 1 : 0) - K.amt) * Math.min(1, dt * 7);
   if (K.amt > 0.001) skinMask();
+  hairStep(now, dt);
   resize();
   if (video.readyState >= 2) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
   const va = video.videoWidth / Math.max(1, video.videoHeight), ca = canvas.width / canvas.height, v = state.v, pos = (x) => Math.max(0, x);
@@ -1031,7 +1079,7 @@ function frame(now) {
   gl.uniform1f(U.uSide, v.side); gl.uniform2f(U.uSlide, state.slide[0] * v.tilt, state.slide[1] * v.tilt);
   for (const [n, k] of [["uEyeL", "eyeL"], ["uEyeR", "eyeR"], ["uFore", "fore"], ["uNose", "nose"], ["uMouth", "mouth"], ["uChin", "chin"]]) gl.uniform2f(U[n], pts[k][0], pts[k][1]);
   gl.uniform1f(U.uW, pts.w);
-  gl.uniform1f(U.uStone, K.amt); gl.uniform3fv(U.uSkinC, K.skin); gl.uniform1f(U.uTurn, K.turn); gl.uniform1f(U.uCrack, K.crack); gl.uniform1f(U.uBreak, K.phase === "breaking" ? K.brk : 0);
+  gl.uniform1f(U.uStone, K.amt); gl.uniform3fv(U.uSkinC, K.skin); gl.uniform1f(U.uHairOn, H.on); gl.uniform1f(U.uPxW, pts.w * canvas.height / (va > ca ? 1 : va / ca)); gl.uniform1f(U.uTurn, K.turn); gl.uniform1f(U.uCrack, K.crack); gl.uniform1f(U.uBreak, K.phase === "breaking" ? K.brk : 0);
   gl.uniform1f(U.uKind, mirror ? M.kind : -1); if (mirror) mirrorUniforms(ca);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   if (K.bits.length) bitsDraw(dt, va, ca);
