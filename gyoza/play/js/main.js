@@ -1,5 +1,5 @@
 // 餃子とドリル: 画面・さわり心地・音・ふるえ・進行。遊びの式は game.js。
-// 絵は 生成写真(v2: 素手で持った餃子 3 種・座金つきネジ・素手のドリル・明るい机 + 皿・カセットコンロの鍋。皿と鍋の小さい餃子は v1 の真上からの絵)。
+// 絵は 生成写真(v3 = 正面打ち: 素手で持った餃子 3 種・真正面のネジの頭・自分の腕ごしのドリル・明るい机 + 皿・カセットコンロの鍋。皿と鍋の小さい餃子は v1 の真上からの絵)。前の版(v2 = 右上から斜めに打つ)は git の tag v2 と pakyun.net/gyoza/v2/。
 // コードで描いているのは くぼみの影・粉・飛ぶ具・泡・湯気・回転の筋・腕の延長だけ。
 (function () {
   'use strict';
@@ -120,11 +120,11 @@
   function load(name, src) { return new Promise(function (ok, ng) { var i = new Image(); i.onload = function () { img[name] = i; ok(); }; i.onerror = ng; i.src = src; }); }
 
   // ================= 絵(写真。tools/make_assets.py が out/gen の生成写真から作る)=================
-  // v2: 寄りのスマホ撮りの構図。左下から 素手が餃子を持ち、右上から ドリルが斜めに来る。位置は 絵の中の座標(build/meta.json と 目で測った値)
+  // v3: 画面 = 自分の目。左手で餃子を持ち(とじ目の帯がこちらを向く)、右手のドリルを 手前から奥へ まっすぐ突き出して、帯のネジを正面から打つ。
+  // 位置は 絵の中の座標(build/meta.json と 目で測った値)
   var HS = 0.8, HND = { w: 1500, h: 1150, x0: -180 };                          // 餃子を持つ手(絵の下の辺 = 画面の下)。とじ目の帯の真ん中 = y = 50 + 0.00083 (x − 950)²
-  var SC = 0.29, SCR = { w: 220, h: 661, headH: 101 };                         // ネジ(座金つき頭)
-  var DS = 0.7, DRL = { w: 1200, h: 1074, tipx: 1, tipy: 976, ax: 0.554, ay: -0.8325 };   // ドリル + 右手。ビットの先と 向き
-  var TH = Math.atan2(DRL.ax, -DRL.ay);                                        // ネジ・ドリルの傾き(まっすぐ上から 右へ 33.6 度)
+  var HR = 35;                                                                 // ネジの頭の半径(皮に付いた時)
+  var DS = 0.85, DRL = { w: 760, h: 1318, tipx: 163, tipy: 1, ax: 0, ay: -1, chuck: [104, 198, 60] };   // ドリル + 右腕(一人称)。ビットの先、チャックの上下と半幅
   var BGI = { w: 1188, h: 2112 };
   var POTW = { cx: 578, cy: 1085, rx: 395, ry: 158 };                          // 鍋の絵の 湯の面
   function rnd(seed) { return G.rng(seed); }
@@ -132,24 +132,27 @@
     var pad = 60, cv = mk(im.width * sc + pad * 2, im.height * sc + pad * 2), c = cv.getContext('2d');
     c.shadowColor = 'rgba(60,36,10,.42)'; c.shadowBlur = blur; c.shadowOffsetY = oy; c.shadowOffsetX = -oy * 0.4; c.drawImage(im, pad, pad, im.width * sc, im.height * sc); cv.pad = pad; return cv;
   }
-  // ネジ 1 本(軸は まっすぐ上向きで描く。呼ぶ側が TH だけ回す)。(0, 0) = 皮に入る点、hgt = 頭の下の面が皮から浮いている高さ(マイナス = 沈んでいる)、spin = 回っている強さ
-  function drawScrew(c, hgt, rot, spin) {
-    var S = img.screw, hw = SCR.w * SC, hh = SCR.headH * SC, sink = Math.max(0, -hgt), yh = -hgt;
-    if (sink > 0) {                                   // くぼみ(頭のまわりの皮が沈む)
-      var kk = clamp(sink / 12, 0, 1), rx = 40 + sink * 2, cy = sink * 0.4;
-      var g = c.createRadialGradient(0, cy, 10, 0, cy, rx); g.addColorStop(0, 'rgba(96,74,44,' + 0.7 * kk + ')'); g.addColorStop(0.6, 'rgba(120,96,60,' + 0.3 * kk + ')'); g.addColorStop(1, 'rgba(120,96,60,0)');
-      c.save(); c.translate(0, cy); c.scale(1, 0.55); c.fillStyle = g; c.beginPath(); c.arc(0, 0, rx, 0, 7); c.fill(); c.restore();
-    } else { c.fillStyle = 'rgba(80,58,30,.4)'; c.beginPath(); c.ellipse(0, 1, 16, 7, 0, 0, 7); c.fill(); }
-    if (hgt > 1) {                                    // 軸(下は皮の中 = 絵の上から 要る長さだけ使う)
-      c.drawImage(S, 0, SCR.headH, SCR.w, hgt / SC, -hw / 2, yh, hw, hgt + 1);
-      if (spin > 0.05) { c.save(); c.beginPath(); c.rect(-12, yh, 24, hgt); c.clip(); for (var k = 0; k < 2; k++) { var bx = Math.sin(rot * 0.8 + k * 3.14) * 11; c.fillStyle = 'rgba(255,255,255,' + 0.32 * spin + ')'; c.fillRect(bx - 2.5, yh, 5, hgt); } c.restore(); }
+  // ネジ 1 本を 正面から。(0, 0) = 皮に入る点、hgt = 頭の下の面が皮から浮いている高さ(マイナス = 沈んでいる)、rot = 回った角度、loose = ゆるいまま残った
+  // 浮いている = 頭が手前にあるぶん 大きく・左上へずれ、影が右下へ離れ、軸が見える。触れる = 影が頭の下に入る。沈む = 頭が少し小さくなり、まわりの皮が くぼんで 縁が埋まる
+  function drawHead(c, hgt, rot, spin, loose) {
+    var up = Math.max(0, hgt), sink = Math.max(0, -hgt), hx = -0.25 * up, hy = -0.8 * up + sink * 0.12, sc = 1 + up * 0.003 - sink * 0.004, r = HR * sc, g;
+    if (up > 0) {                                     // 影(皮の上。高いほど 離れて ぼける)
+      var sx0 = 0.34 * up + 5, sy0 = 0.26 * up + 6, sr = HR * (1.05 + up * 0.004);
+      g = c.createRadialGradient(sx0, sy0, sr * 0.3, sx0, sy0, sr * 1.25); g.addColorStop(0, 'rgba(60,42,20,' + (0.66 - up * 0.002) + ')'); g.addColorStop(0.6, 'rgba(60,42,20,' + (0.4 - up * 0.0015) + ')'); g.addColorStop(1, 'rgba(60,42,20,0)'); c.fillStyle = g; c.beginPath(); c.arc(sx0, sy0, sr * 1.25, 0, 7); c.fill();
+      c.fillStyle = 'rgba(64,46,24,.5)'; c.beginPath(); c.ellipse(0, 1, 10, 7, 0, 0, 7); c.fill();                     // 入り口
+      g = c.createLinearGradient(-8, 0, 8, 0); g.addColorStop(0, '#6e7378'); g.addColorStop(0.4, '#e9ecef'); g.addColorStop(1, '#7c8186');     // 軸(手前へ のびて 頭につながる)
+      c.save(); c.rotate(Math.atan2(hx, -hy)); c.fillStyle = g; var len = Math.hypot(hx, hy); c.fillRect(-8, -len, 16, len);
+      c.strokeStyle = 'rgba(50,54,58,.5)'; c.lineWidth = 2; for (var y = -len + ((rot * 3) % 7 + 7) % 7; y < 0; y += 7) { c.beginPath(); c.moveTo(-7, y + 3); c.lineTo(7, y); c.stroke(); } c.restore();
+    } else {                                          // くぼみ(頭のまわりの皮が沈む)
+      var kk = clamp(sink / 10, 0, 1), dr = r + 14 + sink * 1.8;
+      g = c.createRadialGradient(0, hy + 2, r * 0.8, 0, hy + 2, dr); g.addColorStop(0, 'rgba(70,50,26,' + (0.4 + 0.5 * kk) + ')'); g.addColorStop(0.5, 'rgba(84,62,34,' + (0.2 + 0.3 * kk) + ')'); g.addColorStop(1, 'rgba(84,62,34,0)'); c.fillStyle = g; c.beginPath(); c.arc(0, hy + 2, dr, 0, 7); c.fill();
     }
-    var show = clamp(1 - sink / (hh * 2.2), 0.6, 1);  // 沈むと 頭の下がわが 皮に隠れる
-    c.drawImage(S, 0, 0, SCR.w, SCR.headH * show, -hw / 2, yh - hh, hw, hh * show);
-    if (spin > 0.05) {                                // 回っている間は 十字が ぶれて見えない
-      var ty = yh - hh + 9; c.fillStyle = 'rgba(206,210,214,' + 0.75 * spin + ')'; c.beginPath(); c.ellipse(0, ty, 16, 6, 0, 0, 7); c.fill();
-      c.save(); c.translate(0, ty); c.scale(1, 0.36); c.rotate(rot); c.strokeStyle = 'rgba(255,255,255,' + 0.6 * spin + ')'; c.lineWidth = 4; c.beginPath(); c.moveTo(-15, 0); c.lineTo(15, 0); c.stroke(); c.restore();
-    }
+    c.save(); c.translate(hx, hy); if (loose) { c.rotate(loose); c.scale(1, 0.86); }
+    c.save(); c.rotate(rot); c.drawImage(img.head, -r, -r, r * 2, r * 2); c.restore();
+    if (spin > 0.05) { c.fillStyle = 'rgba(200,205,210,' + 0.3 * spin + ')'; c.beginPath(); c.arc(0, 0, r * 0.5, 0, 7); c.fill(); }      // 回っている十字の ぶれ
+    g = c.createLinearGradient(-r, -r, r, r); g.addColorStop(0, 'rgba(255,255,255,.22)'); g.addColorStop(0.5, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(0,0,0,.2)'); c.fillStyle = g; c.beginPath(); c.arc(0, 0, r, 0, 7); c.fill();   // 光の向きは 回っても変わらない
+    if (sink > 0) { c.strokeStyle = 'rgba(236,224,200,' + clamp(sink / 16, 0, 0.75) + ')'; c.lineWidth = 2 + sink * 0.3; c.beginPath(); c.arc(0, 0, r - 0.5, 0, 7); c.stroke(); }   // 縁が皮に埋まる
+    c.restore();
   }
   function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
 
@@ -160,10 +163,9 @@
   function snapshot(d) {
     var cv = mk(300, 200), c = cv.getContext('2d'), n = d.screws.length, i; c.translate(150, 185);
     c.drawImage(img.dumpling, -130, -144, 260, 144);
-    for (i = 0; i < n; i++) { var a = Math.PI * (n === 1 ? 0.5 : lerp(0.8, 0.2, i / (n - 1))), x = 116 * Math.cos(a), y = -128 * Math.sin(a) + 8, up = d.screws[i].grade === 'loose' ? 9 : 0;
-      c.fillStyle = 'rgba(70,50,26,.4)'; c.beginPath(); c.ellipse(x, y + 2, 13, 5, 0, 0, 7); c.fill();
-      if (up) c.drawImage(img.screw, 0, SCR.headH, SCR.w, 60, x - 5, y - up, 10, up);
-      c.drawImage(img.screw, 0, 0, SCR.w, SCR.headH, x - 12, y - up - 9, 24, 11); }
+    for (i = 0; i < n; i++) { var a = Math.PI * (n === 1 ? 0.5 : lerp(0.8, 0.2, i / (n - 1))), x = 116 * Math.cos(a), y = -128 * Math.sin(a) + 9, up = d.screws[i].grade === 'loose' ? 6 : 0;
+      c.fillStyle = 'rgba(70,50,26,.45)'; c.beginPath(); c.arc(x + up * 0.9 + 1, y + up + 2, 10, 0, 7); c.fill();
+      c.drawImage(img.head, x - 10 - up * 0.3, y - 10 - up, 20, 20); }
     return cv;
   }
 
@@ -171,7 +173,7 @@
   var st = 'LOAD';                 // TITLE → PLAY → OUT(クビ・放置)/ BOIL(茹でる)→ RESULT
   var game = null, T0 = 0, endKind = null, endT = 0, runs = 0, seed = 1;
   var vis = {};                    // 餃子 id → 見た目の付けたし { rot/tilt のネジごと, inT, sq }
-  var drill = { x: new Spring(1500, 70, 900), y: new Spring(1700, 76, 0), rpm: 0, rot: 0, lift: new Spring(300, 26, 0), gearK: new Spring(500, 30, 0), away: 0 };
+  var drill = { x: new Spring(1500, 70, 900), y: new Spring(1700, 76, 0), rpm: 0, rot: 0, lift: new Spring(300, 26, 0), near: new Spring(420, 34, 1), gearK: new Spring(500, 30, 0), away: 0 };
   var sq = new Spring(520, 13, 1), shakeT = -1e9, handA = new Spring(230, 27, 0), goT = 0, spr = {};
   var parts = [], pops = [], leaving = [], stains = [], tray = [], boil = null;
   var hintEl = $('hint'), titleEl = $('title'), resEl = $('result'), bossEl = $('boss'), startEl = $('start');
@@ -337,20 +339,21 @@
       var cur = Math.min(d.i, d.screws.length - 1);
       if (!torn) for (i = 0; i < d.screws.length; i++) {
         var scw = d.screws[i], q = screwPos(d, i), v = vis[d.id] && vis[d.id][i], on = drilling && i === d.i;
-        c.save(); c.translate(ho.x + q.x, ho.y + q.y); c.rotate(TH + (scw.grade === 'loose' && v ? v.tilt : 0));
-        drawScrew(c, on ? -x * PXU : hgtOf(scw), on ? drill.rot : (v ? v.rot : i * 1.3), on ? drill.rpm : 0); c.restore();
+        c.save(); c.translate(ho.x + q.x, ho.y + q.y);
+        drawHead(c, on ? -x * PXU : hgtOf(scw), on ? drill.rot : (v ? v.rot : i * 1.3), on ? drill.rpm : 0, scw.grade === 'loose' && v ? v.tilt * 1.6 : 0); c.restore();
       }
-      sp = screwPos(d, cur); var hh2 = (drilling ? -x * PXU : hgtOf(d.screws[cur])) + SCR.headH * SC + 5;
-      hx = ho.x + sp.x + DRL.ax * hh2; hy = ho.y + sp.y + DRL.ay * hh2;
-      if (torn || d.result != null) { hx = 860; hy = H * 0.5; }
+      sp = screwPos(d, cur); var hg = drilling ? -x * PXU : hgtOf(d.screws[cur]), up = Math.max(0, hg);
+      hx = ho.x + sp.x - 0.25 * up; hy = ho.y + sp.y - 0.8 * up + Math.max(0, -hg) * 0.12;       // ビットの先 = 頭の真ん中
+      drill.near.t = drilling ? clamp(up / 110, 0, 1) * 0.6 : 1;                                   // 1 = 手前で構える / 0 = いちばん奥まで押しこんだ
+      if (torn || d.result != null) { hx = 620; hy = H * 0.66; drill.near.t = 1.4; }
     }
-    // ドリル(回していない間は ネジの頭から 少し離して構える)
-    drill.lift.t = drilling ? 0 : 50; drill.lift.step(dt); drill.gearK.step(dt);
+    // ドリル(手前から奥へ。回していない間は 少し引いて構える。押している間は 奥へ進む = 少し小さくなる)
+    drill.near.step(dt); drill.gearK.step(dt);
     drill.x.t = hx; drill.y.t = hy; drill.x.step(dt); drill.y.step(dt);
     if (drilling) { drill.x.x = hx; drill.y.x = hy; }  // 回している間は ネジの頭に ぴったり
-    var jx = drill.rpm * (Math.sin(tn / 9) * 1.6 + Math.sin(tn / 3.7) * 0.9) * (1 + loadK), jy = drill.rpm * Math.sin(tn / 5.3) * 1.2 * (1 + loadK * 1.5), lf = Math.max(0, drill.lift.x);
-    var away = st === 'OUT' ? drill.away : 0;
-    if (game || st === 'TITLE') drawDrill(c, drill.x.x + jx + DRL.ax * lf + away * 1500, drill.y.x + jy + DRL.ay * lf - away * 1700, tn);
+    var jx = drill.rpm * (Math.sin(tn / 9) * 1.6 + Math.sin(tn / 3.7) * 0.9) * (1 + loadK), jy = drill.rpm * Math.sin(tn / 5.3) * 1.2 * (1 + loadK * 1.5), nr = Math.max(0, drill.near.x);
+    var away = st === 'OUT' ? drill.away : 0, back = (drilling ? 0 : 1) * Math.max(0, nr - 0.6) * 150;
+    if (game || st === 'TITLE') drawDrill(c, drill.x.x + jx + away * 900 + back * 0.25, drill.y.x + jy + back + away * 1600, 0.95 + 0.11 * nr);
     // 粒
     for (i = parts.length - 1; i >= 0; i--) {
       var p = parts[i], a = (tn - p.t0) / p.life; if (a >= 1) { if (p.k === 'bit' && stains.length < 60) stains.push({ x: p.x, y: p.y, r: p.r, col: p.col }); parts.splice(i, 1); continue; }
@@ -360,17 +363,18 @@
     drawPops(c, tn);
     if (st === 'PLAY' || st === 'WAIT' || st === 'OUT') drawHud(c, tn);
   }
-  function drawDrill(c, x, y, tn) {                  // 写真 1 枚(ドリル + 右手)。ビットの先が (x, y)
-    var D = spr.drill, ox = x - DRL.tipx * DS, oy = y - DRL.tipy * DS;
-    // 腕は 絵の上の辺で切れているので、いちばん上の帯を 腕の向きへ引きのばして 画面の外まで続ける
-    c.save(); c.translate(ox, oy + 3); c.transform(1, 0, -0.45, 1, 0, 0); c.drawImage(img.drill, 836, 3, 362, 5, 836 * DS, -2400, 362 * DS, 2401); c.restore();
-    c.drawImage(D, ox - D.pad, oy - D.pad);
-    if (drill.rpm > 0.02) {                          // 回っているチャックの筋(写真の上に うすく)。ビットの軸に沿った枠の中
-      c.save(); c.translate(x, y); c.rotate(TH); var y0 = -470 * DS, y1 = -200 * DS, w = 78 * DS;
-      c.beginPath(); c.moveTo(-w, y0); c.lineTo(w, y0); c.lineTo(w * 0.72, y1); c.lineTo(-w * 0.72, y1); c.closePath(); c.clip(); c.globalAlpha = 0.25 + 0.3 * drill.rpm;
-      for (var k = 0; k < 5; k++) { var px = Math.cos(drill.rot * 0.9 + k * 1.2566) * w; c.fillStyle = k % 2 ? 'rgba(255,255,255,.16)' : 'rgba(0,0,0,.4)'; c.fillRect(px - 9, y0, 18, y1 - y0); }
-      c.restore();
+  function drawDrill(c, x, y, k) {                   // 写真 1 枚(ドリル + 右腕)。ビットの先が (x, y)、k = 大きさ(手前ほど大きい)
+    var D = spr.drill, sc = DS * k;
+    c.save(); c.translate(x, y); c.scale(k, k);
+    // 腕は 絵の下の辺で切れているので、いちばん下の帯を 腕の向き(右下)へ引きのばして 画面の外まで続ける
+    c.save(); c.translate(-DRL.tipx * DS, (DRL.h - DRL.tipy - 4) * DS); c.transform(1, 0, 0.5, 1, 0, 0); c.drawImage(img.drill, 364, DRL.h - 8, 396, 5, 364 * DS, 0, 396 * DS, 700); c.restore();
+    c.drawImage(D, -DRL.tipx * DS - D.pad, -DRL.tipy * DS - D.pad);
+    if (drill.rpm > 0.02) {                          // 回っているチャックの筋(写真の上に うすく)
+      var y0 = DRL.chuck[0] * DS, y1 = DRL.chuck[1] * DS, w = DRL.chuck[2] * DS;
+      c.beginPath(); c.moveTo(-w * 0.7, y0); c.lineTo(w * 0.7, y0); c.lineTo(w, y1); c.lineTo(-w, y1); c.closePath(); c.clip(); c.globalAlpha = 0.25 + 0.3 * drill.rpm;
+      for (var i = 0; i < 5; i++) { var px = Math.cos(drill.rot * 0.9 + i * 1.2566) * w; c.fillStyle = i % 2 ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.35)'; c.fillRect(px - 8, y0, 16, y1 - y0); }
     }
+    c.restore();
   }
   function drawPops(c, tn) {
     c.textAlign = 'center'; c.textBaseline = 'alphabetic'; c.lineJoin = 'round';
@@ -423,7 +427,7 @@
   // ---- 起動 ----
   function loop() { frame(now()); requestAnimationFrame(loop); }
   window.addEventListener('resize', layout);
-  Promise.all(['table', 'pot', 'dumpling', 'dumpling_open', 'hand', 'hand_thin', 'hand_torn', 'screw', 'drill'].map(function (n) { return load(n, 'assets/' + n + '.webp'); }).concat([ document.fonts ? document.fonts.load('40px "YujiBoku"', '餃子とドリル').catch(function () {}) : null, document.fonts ? document.fonts.load('40px "GZNum"', '0123').catch(function () {}) : null])).then(function () {
+  Promise.all(['table', 'pot', 'dumpling', 'dumpling_open', 'hand', 'hand_thin', 'hand_torn', 'head', 'drill'].map(function (n) { return load(n, 'assets/' + n + '.webp'); }).concat([ document.fonts ? document.fonts.load('40px "YujiBoku"', '餃子とドリル').catch(function () {}) : null, document.fonts ? document.fonts.load('40px "GZNum"', '0123').catch(function () {}) : null])).then(function () {
     ['hand', 'hand_thin', 'hand_torn'].forEach(function (n) { spr[n] = bake(img[n], HS, 34, 30); }); spr.drill = bake(img.drill, DS, 30, 34);
     ready = true; layout();
     game = new G.Game(1); vis[0] = { inT: -1000 }; st = 'TITLE'; lastT = now();
