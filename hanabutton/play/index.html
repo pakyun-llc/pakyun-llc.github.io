@@ -19,7 +19,7 @@ body{font-family:"ZenMaru","Hiragino Maru Gothic ProN","Hiragino Sans",system-ui
 #pad,#lcd{will-change:transform;pointer-events:none}
 #fx{touch-action:none;cursor:grab}
 /* 字は写真の上に じかに置く(帯・カードなし)。紙色の細いふちだけで支える */
-.txt{position:absolute;left:0;right:0;text-align:center;pointer-events:none;
+.txt{position:absolute;left:0;right:0;text-align:center;pointer-events:none;word-break:keep-all;
   text-shadow:0 0 calc(var(--u)*5) var(--paper),0 0 calc(var(--u)*5) var(--paper),0 0 calc(var(--u)*14) var(--paper),0 0 calc(var(--u)*26) rgba(255,248,236,.9)}
 #title{bottom:calc(var(--u)*150 + env(safe-area-inset-bottom));transition:opacity 220ms var(--ease-out),transform 220ms var(--ease-out)}
 #title h1{margin:0;font-size:calc(var(--u)*168);line-height:1.05;letter-spacing:.04em}
@@ -39,7 +39,7 @@ body{font-family:"ZenMaru","Hiragino Maru Gothic ProN","Hiragino Sans",system-ui
 #r-rank{max-width:92%;margin-left:auto;margin-right:auto}
 #r-rank{font-size:calc(var(--u)*62);color:var(--ginger);margin-top:calc(var(--u)*6)}
 #r-rank.bad{color:var(--warn)}
-#r-line{font-size:calc(var(--u)*38);margin-top:calc(var(--u)*8)}
+#r-line{font-size:calc(var(--u)*38);margin-top:calc(var(--u)*8);white-space:pre-line}
 #r-btns{margin-top:calc(var(--u)*30);display:flex;justify-content:center;gap:calc(var(--u)*26);pointer-events:auto;text-shadow:none}
 button{font:inherit;color:var(--ink);background:var(--paper);border:0;border-radius:999px;height:calc(var(--u)*112);padding:0 calc(var(--u)*56);
   font-size:calc(var(--u)*44);box-shadow:0 calc(var(--u)*6) calc(var(--u)*18) rgba(58,40,25,.28);transition:transform 140ms var(--ease-out);touch-action:manipulation;cursor:pointer}
@@ -47,6 +47,28 @@ button:active{transform:scale(.97)}
 button.main{background:var(--ink);color:var(--paper)}
 button:focus-visible{outline:calc(var(--u)*6) solid var(--ginger);outline-offset:calc(var(--u)*6)}
 @media (prefers-reduced-motion:reduce){#title,#result>*{transition-duration:1ms}}
+/* スマホ横: 画面いっぱい。字は 鼻の左右の ほお(パッドの下)に置く。左 = 題・結果の字 / 右 = ボタン */
+body.land #stage{left:0;transform:none}
+body.land #title,body.land #hint,body.land #result{left:0;right:auto;width:calc(50% - var(--u)*240);padding-left:env(safe-area-inset-left)}
+body.land #title{bottom:calc(var(--u)*80)}
+body.land #title h1{font-size:calc(var(--u)*150)}
+body.land #title p{font-size:calc(var(--u)*44);margin-top:calc(var(--u)*12);padding:0 calc(var(--u)*30)}
+body.land #hint{bottom:calc(var(--u)*120);padding-right:calc(var(--u)*30)}
+body.land #result{bottom:calc(var(--u)*56)}
+body.land #r-big{font-size:calc(var(--u)*170)}
+body.land #r-big.word{font-size:calc(var(--u)*118)}
+body.land #r-line{padding:0 calc(var(--u)*24)}
+body.land #r-btns{position:absolute;left:calc(100% + var(--u)*480);width:calc(100% - env(safe-area-inset-left));bottom:calc(var(--u)*10);margin:0;
+  flex-direction:column;align-items:center;gap:calc(var(--u)*30);padding-right:env(safe-area-inset-right)}
+/* スマホ縦: 「横にして」の画面。小さなスマホの絵が 横に倒れる */
+#rotate{display:none;position:fixed;inset:0;z-index:10;background:#2a2119;color:var(--paper);flex-direction:column;align-items:center;justify-content:center;gap:28px;touch-action:none}
+#rotate .ph{width:62px;height:108px;border:5px solid var(--paper);border-radius:14px;position:relative;animation:tilt 2.6s var(--ease-out) infinite}
+#rotate .ph i{position:absolute;left:50%;top:50%;width:16px;height:12px;margin:-6px 0 0 -8px;border-radius:50%;background:var(--paper)}
+#rotate p{margin:0;font-size:20px;letter-spacing:.08em}
+#rotate button{height:52px;padding:0 30px;font-size:18px;--u:1px}
+@keyframes tilt{0%,18%{transform:rotate(0)}45%,82%{transform:rotate(-90deg)}100%{transform:rotate(0)}}
+@media (pointer:coarse) and (orientation:portrait) and (max-width:540px){#rotate{display:flex}}
+@media (prefers-reduced-motion:reduce){#rotate .ph{animation:none;transform:rotate(-90deg)}}
 </style>
 </head>
 <body>
@@ -57,6 +79,7 @@ button:focus-visible{outline:calc(var(--u)*6) solid var(--ginger);outline-offset
   <div id="result" class="txt"><div id="r-label"></div><div id="r-big"></div><div id="r-rank"></div><div id="r-line"></div>
     <div id="r-btns"><button id="b-again" class="main"></button><button id="b-share"></button></div></div>
 </div>
+<div id="rotate"><div class="ph"><i></i></div><p id="rot-t"></p><button id="b-rot" hidden></button></div>
 <script src="js/game.js"></script>
 <script src="js/main.js"></script>
 </body>

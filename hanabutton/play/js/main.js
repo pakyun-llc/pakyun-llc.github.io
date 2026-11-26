@@ -14,9 +14,13 @@
   var THUMB = { w: 900, h: 1015, pad: [118, 120] };      // 指の腹(ここが鼻に乗る)
   var PAD_W = 1010;                                      // 犬の絵 1.0 倍のときのパッドの幅
   var EDGE = 0.72, NOTCH = 24;                           // パッドの下のふち = 鼻の中心から 鼻の高さ × 0.72 上 / くぼみ = 鼻の幅 + 24 の円
+  var NOSE_VIS = 22;                                     // 倒しきった時に 鼻が ずれる幅(写真の px)。小さなゴムのスティック。口までは伸ばさない
+  var LAND_TOP = 320, LAND_BOT = 1060;                   // スマホ横: 写真の この縦の範囲を 画面の高さに合わせる(パッドの上 〜 口の下)
 
-  // ---- 舞台(幅 1080。高さは画面で決まる)----
-  var W = 1080, H = 1920, U = 1, DPR = 1, ps = 1.06, RS = 150;
+  // ---- 舞台(縦の画面 = 幅 1080・高さは画面で決まる / スマホ横 = 高さ 1080・幅は画面で決まる)----
+  var W = 1080, H = 1920, U = 1, DPR = 1, ps = 1.06, RS = 150, imgY = 0, LAND = false;
+  var mqLand = window.matchMedia('(pointer: coarse) and (orientation: landscape) and (max-height: 540px)');
+  var mqRot = window.matchMedia('(pointer: coarse) and (orientation: portrait) and (max-width: 540px)');
   var nose = { x: 540, y: 850 }, pad = { x: 0, y: 0, w: 0, h: 0, k: 1 }, lcd = { x: 0, y: 0, w: 0, h: 0, k: 1 };
   var $ = function (id) { return document.getElementById(id); };
   var stage = $('stage'), cGl = $('gl'), cPad = $('pad'), cFx = $('fx');
@@ -27,13 +31,21 @@
   var FONT = '"ZenMaru","Hiragino Maru Gothic ProN","Hiragino Sans",system-ui,sans-serif';
 
   function layout() {
-    var vw = window.innerWidth, vh = window.innerHeight, cw = Math.min(vw, vh * 0.62);
-    H = Math.max(1500, Math.min(2500, Math.round(W * vh / cw)));
-    U = cw / W; DPR = Math.min(window.devicePixelRatio || 1, 3);
+    var vw = window.innerWidth, vh = window.innerHeight, cw;
+    LAND = mqLand.matches || Q.get('land') === '1';
+    document.body.classList.toggle('land', LAND);
+    if (LAND) {                                          // スマホ横: 画面いっぱい。写真の左右の外は 鏡うつしで埋める(シェーダ)
+      cw = vw; H = 1080; W = Math.round(H * vw / vh); U = vh / H;
+      ps = H / (LAND_BOT - LAND_TOP); imgY = LAND_TOP * ps;
+    } else {                                             // 縦の画面・PC: 縦の柱(いままでどおり)
+      cw = Math.min(vw, vh * 0.62); W = 1080;
+      H = Math.max(1500, Math.min(2500, Math.round(W * vh / cw))); U = cw / W;
+      ps = Math.max(1.06, H / DOG.h); imgY = 0;
+    }
+    DPR = Math.min(window.devicePixelRatio || 1, 3);
     stage.style.width = cw + 'px'; stage.style.height = vh + 'px'; stage.style.setProperty('--u', U + 'px');
     [cGl, cPad, cFx].forEach(function (c) { c.width = Math.round(cw * DPR); c.height = Math.round(vh * DPR); });
-    ps = Math.max(1.06, H / DOG.h);
-    nose.x = 540; nose.y = DOG.nose[1] * ps;
+    nose.x = W / 2; nose.y = DOG.nose[1] * ps - imgY;
     pad.k = PAD_W * ps / PAD.w; pad.w = PAD.w * pad.k; pad.h = PAD.h * pad.k;
     pad.x = nose.x - pad.w / 2; pad.y = nose.y - DOG.ry * ps * EDGE - pad.h;
     lcd.k = pad.k; lcd.x = pad.x + PAD.lcd[0] * pad.k; lcd.y = pad.y + PAD.lcd[1] * pad.k; lcd.w = (PAD.lcd[2] - PAD.lcd[0]) * pad.k; lcd.h = (PAD.lcd[3] - PAD.lcd[1]) * pad.k;
@@ -65,6 +77,28 @@
     var comp = AC.createDynamicsCompressor(); master.connect(comp); comp.connect(AC.destination);
     analyser = AC.createAnalyser(); analyser.fftSize = 2048; master.connect(analyser);
     noiseBuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate); var d = noiseBuf.getChannelData(0); for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    // ぎむぎむ(ゴムが こすれる音): のこぎり波 = こすれの つっかかり → 2 つの山の帯域 → 細かく途切れさせる → 音量は 動かす速さで
+    var o = AC.createOscillator(), f1 = AC.createBiquadFilter(), f2 = AC.createBiquadFilter(), am = AC.createGain(), g = AC.createGain(), g2 = AC.createGain(), lfo = AC.createOscillator(), la = AC.createGain();
+    o.type = 'sawtooth'; o.frequency.value = 70;
+    f1.type = 'bandpass'; f1.Q.value = 6; f1.frequency.value = 900; f2.type = 'bandpass'; f2.Q.value = 5; f2.frequency.value = 2100; g2.gain.value = 0.45;
+    lfo.type = 'square'; lfo.frequency.value = 12; la.gain.value = 0.45; am.gain.value = 0.55; lfo.connect(la); la.connect(am.gain);
+    o.connect(f1); o.connect(f2); f2.connect(g2); f1.connect(am); g2.connect(am); am.connect(g); g.gain.value = 0; g.connect(master);
+    o.start(); lfo.start(); rub = { o: o, f1: f1, f2: f2, g: g, lfo: lfo };
+  }
+  // 鼻を動かす速さ(スティック/秒)と 外向き(+)か 内向き(−)か → ぎ(高い)/ む(低い)
+  var rub = null, rubLv = 0, rubT = 0, rubPeak = 0;
+  function rubMove(speed, radial) {
+    var s = clamp(speed / 6, 0, 1); if (s < 0.04) return;
+    rubLv = 0.2 * Math.pow(s, 0.7); rubT = performance.now(); rubPeak = Math.max(rubPeak, rubLv);
+    if (!rub || AC.state !== 'running') return;
+    var now = AC.currentTime, up = radial >= 0 ? 1.3 : 0.82;
+    rub.g.gain.setTargetAtTime(rubLv, now, 0.012);
+    rub.o.frequency.setTargetAtTime((52 + 80 * s) * up, now, 0.02);
+    rub.f1.frequency.setTargetAtTime((650 + 800 * s) * up, now, 0.03); rub.f2.frequency.setTargetAtTime((1700 + 900 * s) * up, now, 0.03);
+    rub.lfo.frequency.setTargetAtTime(8 + 16 * s, now, 0.05);
+  }
+  function rubIdle(now) {                       // 50 ms 動かなければ 消す
+    if (rubLv > 0 && now - rubT > 50) { rubLv = 0; if (rub && AC.state === 'running') rub.g.gain.setTargetAtTime(0, AC.currentTime, 0.035); }
   }
   function env(g, t, a, peak, d) { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + d); }
   function tone(type, f0, f1, t, a, d, peak) {
@@ -114,19 +148,21 @@
   var st = 'LOAD';                 // TITLE(さわって遊べる)→ PLAY → ENDING → RESULT
   var game = null, chart = null, P0 = 0, endKind = null, endT = 0, endStep = 0, runs = 0, snoreT = 0, tickI = 0, warnI = 0;
   var ptr = { id: null, type: 'mouse', x: 0, y: 0, x0: 0, y0: 0, down: false, seen: false };
-  var raw = { x: 0, y: 0, zone: null };
+  var raw = { x: 0, y: 0, t: 0 };
+  var tdog = G.K.START.slice(), tface = [0, 1], tbone = null;          // タイトルの 練習(液晶の犬を動かして ほねを 1 本たべると 準備できる)
   var nx = new Spring(620, 15), ny = new Spring(620, 15);            // 鼻(見た目)
   var lx = new Spring(90, 13), ly = new Spring(90, 13);              // 口もとが 遅れてついてくる
   var press = new Spring(900, 34), headY = new Spring(260, 12), headX = new Spring(260, 10), lift = new Spring(60, 14);
   var padY = new Spring(180, 9), padR = new Spring(160, 8), padUp = new Spring(40, 12);     // パッドの はね・かたむき・浮き
-  var tiltSign = 1, drops = [], flash = { t: -1, ok: true, dir: 'L' }, lcdMsg = null, lcdMsg2 = null, padOff = 0, wiggled = false, startArm = 0, wakeShown = 0;
+  var tiltSign = 1, drops = [], flash = { t: -1, ok: true, x: 0, y: 0 }, lcdMsg = null, lcdMsg2 = null, padOff = 0, wiggled = false, startArm = 0, wakeShown = 0, blinkI = -1;
   var hintEl = $('hint'), titleEl = $('title'), resEl = $('result');
 
   function load(name, src) { return new Promise(function (ok, ng) { var i = new Image(); i.onload = function () { img[name] = i; ok(); }; i.onerror = ng; i.src = src; }); }
 
   // ---- 犬(WebGL。写真 1 枚を ゆがめる。鼻そのものは形を保ち、まわりの毛と皮が伸びる)----
   var prog, uni = {};
-  var VS = 'attribute vec2 a;varying vec2 v;uniform vec4 R;uniform vec2 TS;void main(){v=a*TS;vec2 p=R.xy+a*R.zw;gl_Position=vec4(p.x*2.-1.,1.-p.y*2.,0.,1.);}';
+  // 画面いっぱいの四角。v = その点に当たる 写真の px(R.xy = 画面の左上に当たる写真の px、R.zw = 画面の広さを写真の px で)
+  var VS = 'attribute vec2 a;varying vec2 v;uniform vec4 R;void main(){v=R.xy+a*R.zw;gl_Position=vec4(a.x*2.-1.,1.-a.y*2.,0.,1.);}';
   var FS = [
     'precision highp float;varying vec2 v;uniform sampler2D T;uniform vec2 TS;',
     'uniform vec4 Hc[5];uniform vec2 Hd[5];uniform vec4 P;uniform vec4 Z;',
@@ -135,7 +171,9 @@
     ' vec2 z=q-Z.xy;q=Z.xy+z/(1.+Z.w*fall(length(z)/Z.z));',                       // 顔が こちらへ持ち上がる(起きたとき)
     ' for(int i=0;i<5;i++){q-=Hd[i]*fall(max(0.,distance(q,Hc[i].xy+Hd[i])-Hc[i].w)/(Hc[i].z-Hc[i].w));}',   // 持ち手: ずれた先を中心に重みを取る。w = 形を保つ半径
     ' vec2 d=q-P.xy;q=P.xy+d/(1.+P.w*fall(length(d)/P.z));',                       // 押しこみ(鼻が ひらたく広がる)
-    ' gl_FragColor=texture2D(T,clamp(q/TS,0.,1.));}'
+    ' vec2 u=q/TS;float o=max(max(-u.x,u.x-1.),0.);',                                // 写真の外(スマホ横の左右)は ふちの毛を 鏡うつしで 横へ のばす。
+    ' u.x=clamp(u.x,0.,1.)+(u.x<0.?o*.38:-o*.38);u.y=1.-abs(1.-mod(u.y,2.));',        //   0.38 に縮めて写す = 目(ふちから 230 px)までは届かない。外ほど 少し暗く
+    ' gl_FragColor=vec4(texture2D(T,u).rgb*(1.-min(.22,o*.9)),1.);}'
   ].join('\n');
   function glInit() {
     function sh(type, src) { var s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
@@ -153,16 +191,16 @@
   function drawDog(time, wake) {
     gl.viewport(0, 0, cGl.width, cGl.height);
     var x0 = nose.x - DOG.nose[0] * ps, k = 1 / ps, N = DOG.nose;
-    gl.uniform4f(uni.R, x0 / W, 0, DOG.w * ps / W, DOG.h * ps / H); gl.uniform2f(uni.TS, DOG.w, DOG.h);
+    gl.uniform4f(uni.R, -x0 / ps, imgY / ps, W / ps, H / ps); gl.uniform2f(uni.TS, DOG.w, DOG.h);
     var br = Math.sin(time / 1000 * (1.7 + wake * 2.2)), sh = wake > 0.3 ? Math.sin(time / 37) * (wake - 0.3) * 3 : 0;
     gl.uniform4fv(uni.Hc, new Float32Array([
-      N[0], N[1], 330, 92,                         // 鼻(半径 92 の内側は 形を保つ)と まわりの口もと
-      N[0], N[1] + 30, 560, 0,                     // 顔の下半分(遅れて少し)
+      N[0], N[1], 200, 96,                         // 鼻(半径 96 の内側は 形を保つ)。ゆがみは鼻のまわり 200 まで = 口(鼻の下 190)は ほぼ動かない
+      N[0], N[1] - 40, 420, 0,                     // 顔の上半分(遅れて ほんの少し)
       N[0], N[1] - 120, 900, 0,                    // 頭ぜんたい(もぞっ・くしゃみ)
       540, 1500, 700, 0,                           // 胸(寝息)
       N[0], N[1] + 170, 240, 0]));                 // あご(フガッ)
-    gl.uniform2fv(uni.Hd, new Float32Array([nx.x * k, ny.x * k, lx.x * k * 0.2, ly.x * k * 0.2, headX.x + sh, headY.x, 0, -7 * br * (1 + wake), 0, Math.max(0, headY.x) * 0.5]));
-    gl.uniform4f(uni.P, N[0] + nx.x * k, N[1] + ny.x * k, 170, 0.16 * press.x);
+    gl.uniform2fv(uni.Hd, new Float32Array([nx.x * k, ny.x * k, lx.x * k * 0.15, ly.x * k * 0.15, headX.x + sh, headY.x, 0, -7 * br * (1 + wake), 0, Math.max(0, headY.x) * 0.5]));
+    gl.uniform4f(uni.P, N[0] + nx.x * k, N[1] + ny.x * k, 135, 0.10 * press.x);
     gl.uniform4f(uni.Z, N[0], N[1] - 180, 1100, 0.085 * lift.x);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
@@ -186,42 +224,43 @@
     g = pd.createLinearGradient(0, lcd.y, 0, lcd.y + lcd.h); g.addColorStop(0, 'rgba(0,0,0,.22)'); g.addColorStop(0.12, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(255,255,255,.08)'); pd.fillStyle = g; pd.fillRect(lcd.x, lcd.y, lcd.w, lcd.h);
   }
 
-  // ---- 液晶のゲーム「ほねキャッチ」: 4 方向から来る ほねを、犬の顔を向けて くわえる ----
-  var LD = '#27301f', LG = 'rgba(39,48,31,.11)', LW = 435, LH = 275, LC = [217, 142];
-  var ARM = { L: [[-166, 0], [-116, 0], [-66, 0]], R: [[166, 0], [116, 0], [66, 0]], U: [[0, -108], [0, -78], [0, -48]], D: [[0, 108], [0, 78], [0, 48]] };
-  function bone(c, x, y, vert, col) {
-    c.fillStyle = col; c.save(); c.translate(x, y); if (vert) c.rotate(Math.PI / 2);
-    c.fillRect(-11, -3.5, 22, 7); [[-12, -5], [-12, 5], [12, -5], [12, 5]].forEach(function (p) { c.beginPath(); c.arc(p[0], p[1], 5.5, 0, 7); c.fill(); }); c.restore();
+  // ---- 液晶のゲーム「ほねパクパク」: 鼻で 液晶の犬(= 夢の中の この犬)を動かして、出てきた ほねを たべる ----
+  var LD = '#27301f', LG = 'rgba(39,48,31,.11)', LW = G.K.FW, LH = G.K.FH;
+  function bone(c, x, y, col) {
+    c.fillStyle = col; c.save(); c.translate(x, y); c.rotate(-0.35);
+    c.fillRect(-13, -4, 26, 8); [[-14, -6], [-14, 6], [14, -6], [14, 6]].forEach(function (p) { c.beginPath(); c.arc(p[0], p[1], 6.5, 0, 7); c.fill(); }); c.restore();
   }
-  function lcdDog(c, dir, col, chomp) {
-    var v = dir ? G.VEC[dir] : [0, 0]; c.fillStyle = col;
-    c.beginPath(); c.arc(LC[0], LC[1], 23, 0, 7); c.fill();
-    c.beginPath(); c.ellipse(LC[0] - 21, LC[1] - 15, 9, 15, -0.5, 0, 7); c.fill(); c.beginPath(); c.ellipse(LC[0] + 21, LC[1] - 15, 9, 15, 0.5, 0, 7); c.fill();   // 耳
-    if (dir) { c.beginPath(); c.arc(LC[0] + v[0] * 27, LC[1] + v[1] * 27, chomp ? 13 : 10, 0, 7); c.fill(); }                                       // 向いた ほうへ 鼻先
+  function lcdDog(c, p, f, col, chomp) {          // 小さな犬の顔(たれ耳・目・鼻先)。鼻先が 進む向きを向く
+    c.save(); c.translate(p[0], p[1]); c.rotate(Math.atan2(f[1], f[0]) - Math.PI / 2); c.fillStyle = col;
+    c.beginPath(); c.ellipse(-20, -2, 8, 15, 0.35, 0, 7); c.fill(); c.beginPath(); c.ellipse(20, -2, 8, 15, -0.35, 0, 7); c.fill();   // たれ耳
+    c.beginPath(); c.arc(0, -2, 18, 0, 7); c.fill();                                                                         // 頭
+    c.beginPath(); c.ellipse(0, 17, 10, chomp ? 13 : 10, 0, 0, 7); c.fill();                                                // 鼻先
+    c.fillStyle = '#aab79a'; c.beginPath(); c.arc(-7, 3, 3.2, 0, 7); c.arc(7, 3, 3.2, 0, 7); c.fill();                     // 目(液晶の地の色で ぬく)
+    if (chomp) { c.beginPath(); c.moveTo(-6, 26); c.lineTo(0, 19); c.lineTo(6, 26); c.fill(); }                              // ぱくっ
+    c.restore();
   }
   function drawLcd(time, ts) {
     var c = fx; c.save(); c.translate(lcd.x, lcd.y); c.scale(lcd.w / LW, lcd.h / LH);
     c.beginPath(); c.rect(0, 0, LW, LH); c.clip(); c.textBaseline = 'middle';
-    var d, j, i;
-    for (d in ARM) for (j = 0; j < 3; j++) bone(c, LC[0] + ARM[d][j][0], LC[1] + ARM[d][j][1], d === 'U' || d === 'D', LG);       // 消えているコマ(液晶らしさ)
-    ['L', 'R', 'U', 'D'].forEach(function (q) { var v = G.VEC[q]; c.fillStyle = LG; c.beginPath(); c.arc(LC[0] + v[0] * 27, LC[1] + v[1] * 27, 10, 0, 7); c.fill(); });
+    var i, fl = flash.t >= 0 && time - flash.t < 300;
     if (st === 'PLAY' && game) {
-      for (i = game.k; i < game.items.length; i++) {
-        var it = game.items[i], n = Math.ceil((it.t - ts) / it.step); if (n > 3) break; if (n < 1) continue;
-        var p = ARM[it.dir][3 - n]; bone(c, LC[0] + p[0], LC[1] + p[1], it.dir === 'U' || it.dir === 'D', LD);
-      }
-      var fl = flash.t >= 0 && time - flash.t < 260;
-      lcdDog(c, raw.zone, LD, fl && flash.ok);
-      if (fl && !flash.ok && Math.floor((time - flash.t) / 65) % 2 === 0) { var v2 = G.VEC[flash.dir]; c.fillStyle = LD; c.font = '34px ' + FONT; c.textAlign = 'center'; c.fillText('×', LC[0] + v2[0] * 56, LC[1] + v2[1] * 50); }
-      c.fillStyle = LD; c.font = '44px ' + FONT; c.textAlign = 'left'; c.fillText(String(game.caught), 16, 34);
-      for (i = 0; i < G.K.LIVES - 1; i++) { c.fillStyle = i < game.missed ? LD : LG; c.font = '26px ' + FONT; c.textAlign = 'center'; c.fillText('×', LW - 24 - i * 26, 28); }
+      var b = game.bone;
+      if (b) { var left = b.t1 - ts; if (left > G.K.BLINK || Math.floor(left / 140) % 2 === 0) bone(c, b.x, b.y, LD); else bone(c, b.x, b.y, LG); }
+      if (fl && !flash.ok && Math.floor((time - flash.t) / 75) % 2 === 0) { c.fillStyle = LD; c.font = '40px ' + FONT; c.textAlign = 'center'; c.fillText('×', flash.x, flash.y); }
+      lcdDog(c, game.dog, game.face, LD, fl && flash.ok);
+      c.fillStyle = LD; c.font = '40px ' + FONT; c.textAlign = 'left'; c.fillText(game.caught + '/' + G.K.GOAL, 14, 30);
+      for (i = 0; i < G.K.LIVES; i++) { c.fillStyle = i < game.missed ? LD : LG; c.font = '28px ' + FONT; c.textAlign = 'center'; c.fillText('×', LW - 22 - i * 28, 28); }
       var zs = 3 - game.stage, blink = game.light && Math.floor(time / 180) % 2 === 0;
       for (i = 0; i < 3; i++) { c.fillStyle = i < zs && !blink ? LD : LG; c.font = (22 + i * 7) + 'px ' + FONT; c.textAlign = 'center'; c.fillText('z', 26 + i * 27, LH - 26 - i * 6); }
+    } else if (st === 'TITLE') {                   // 練習: ほねを 1 本たべたら「はなすと スタート」
+      if (tbone) bone(c, tbone[0], tbone[1], LD);
+      lcdDog(c, tdog, tface, LD, fl);
+      c.fillStyle = LD; c.textAlign = 'center'; c.font = '34px ' + FONT;
+      c.fillText(tbone ? (Math.floor(time / 700) % 2 ? T('ほねパクパク', 'BONE MUNCH') : '') : T('はなすと スタート', 'LET GO TO START'), LW / 2, 32);
     } else {
-      lcdDog(c, raw.zone, LD, false);
+      if (game) lcdDog(c, game.dog, game.face, LD, false);
       c.fillStyle = LD; c.textAlign = 'center';
-      var m = lcdMsg != null ? lcdMsg : (Math.floor(time / 600) % 2 ? T('ほねキャッチ', 'BONE CATCH') : '');
-      c.font = '36px ' + FONT; c.fillText(m, LC[0], 38); if (lcdMsg2) { c.font = '34px ' + FONT; c.fillText(lcdMsg2, LC[0], LH - 34); }
+      c.font = '38px ' + FONT; c.fillText(lcdMsg || '', LW / 2, 36); if (lcdMsg2) { c.font = '34px ' + FONT; c.fillText(lcdMsg2, LW / 2, LH - 32); }
     }
     c.restore();
   }
@@ -246,12 +285,13 @@
     var m = Math.sqrt(x * x + y * y);
     if (m > 1) { var m2 = 1 + (1 - Math.exp(-(m - 1) * 0.9)) * 0.28; x *= m2 / m; y *= m2 / m; }   // 端は ゴムのように重くなる
     if (st === 'ENDING' || st === 'RESULT') { x = 0; y = 0; press.t = 0; }
-    raw.x = x; raw.y = y;
-    var z = G.zoneOf(x, y);
-    if (z !== raw.zone) { if (z) { haptic('tick'); play('squish'); } else if (touch) haptic('back'); raw.zone = z; }
-    nx.t = x * RS; ny.t = y * RS; lx.t = nx.t; ly.t = ny.t;
+    if (touch && ptr.down) {                                            // ぎむぎむ: 押したまま動かす速さで鳴る
+      var ddt = Math.max(4, Math.min(50, t - raw.t)) / 1000, d = Math.hypot(x - raw.x, y - raw.y);
+      if (d > 0) rubMove(d / ddt, (Math.hypot(x, y) - Math.hypot(raw.x, raw.y)) / ddt);
+    }
+    raw.x = x; raw.y = y; raw.t = t;
+    nx.t = x * NOSE_VIS * ps; ny.t = y * NOSE_VIS * ps; lx.t = nx.t; ly.t = ny.t;     // 鼻は 少しだけ動く(指は もっと大きく動いている)
     if (st === 'PLAY' && game && !game.over) handle(game.input(t - P0, x, y, touch));
-    else if (st === 'TITLE' && touch && z && performance.now() > startArm) wiggled = true;
   }
   function down(e) {
     if (ptr.id !== null || st === 'RESULT' || st === 'LOAD') return;
@@ -263,7 +303,7 @@
     try { cFx.setPointerCapture(e.pointerId); } catch (err) {}
     press.t = 1; nx.k = ny.k = 900; nx.c = ny.c = 46;          // 押している間は 指に ぴったり寄る
     cFx.style.cursor = 'grabbing';
-    setRaw(e.timeStamp, 0, 0, true); e.preventDefault();
+    raw.t = e.timeStamp; setRaw(e.timeStamp, 0, 0, true); play('squish'); e.preventDefault();
   }
   function move(e) {
     var list = (e.getCoalescedEvents && e.getCoalescedEvents()) || []; if (!list.length) list = [e];
@@ -279,9 +319,9 @@
     if (e.pointerId !== ptr.id) return;
     ptr.id = null; ptr.down = false; press.t = 0; nx.k = ny.k = 620; nx.c = ny.c = 15;   // 離すと ぷるんと戻る
     cFx.style.cursor = 'grab';
-    audioOn();                                   // スマホは 指を離した時に はじめて音が出せる → 「グリグリして 離すと はじまる」
+    audioOn();                                   // スマホは 指を離した時に はじめて音が出せる → 「練習の ほねを たべて 離すと はじまる」
     setRaw(e.timeStamp, 0, 0, false);
-    if (st === 'TITLE' && wiggled) begin(e.timeStamp);
+    if (st === 'TITLE' && wiggled && performance.now() > startArm) begin(e.timeStamp);
   }
   cFx.addEventListener('pointerdown', down); cFx.addEventListener('pointermove', move);
   cFx.addEventListener('pointerup', up); cFx.addEventListener('pointercancel', up);
@@ -293,23 +333,25 @@
     st = 'TITLE'; game = null; endKind = null; lcdMsg = null; lcdMsg2 = null; padOff = 0; wakeShown = 0;
     headY.t = headX.t = 0; lift.t = 0; padUp.t = 0; padY.t = 0; padR.t = 0;
     titleEl.querySelector('h1').textContent = first ? T('鼻ボタン', 'Nose Button') : '';
-    titleEl.querySelector('p').textContent = T('鼻を グリグリして 離すと はじまる', 'Wiggle the nose, then let go');
+    titleEl.querySelector('p').textContent = T('鼻で 犬を動かして ほねを たべよう', 'Steer the dog with the nose. Eat the bone');
     titleEl.classList.remove('off'); resEl.classList.remove('on'); hintEl.classList.remove('on');
     startArm = performance.now() + (first ? 0 : 350); wiggled = false;
+    tdog = G.K.START.slice(); tface = [0, 1]; tbone = [G.K.FW - 90, G.K.FH / 2 + 20];
   }
   function begin(t) {
     st = 'PLAY'; runs++;
     var seed = +(Q.get('seed') || 0) || (Date.now() % 100000) + runs;
     tiltSign = seed % 2 ? 1 : -1;
-    chart = G.makeChart(seed); game = new G.Game(chart); P0 = t; snoreT = 500; tickI = 0; warnI = 0;
+    chart = G.makeChart(seed); game = new G.Game(chart); P0 = t; snoreT = 500; warnI = 0; blinkI = -1;
     titleEl.classList.add('off');
     hintEl.textContent = T('そっと。雑に動かすと 犬が起きる', 'Gently. Rough moves wake the dog'); hintEl.classList.add('on');
   }
   function handle(evs) {
     for (var i = 0; i < evs.length; i++) {
       var e = evs[i];
-      if (e.type === 'catch') { flash = { t: performance.now(), ok: true, dir: e.item.dir }; play('good'); haptic('good'); if (e.item.i === 3) hintEl.classList.remove('on'); }
-      else if (e.type === 'miss') { flash = { t: performance.now(), ok: false, dir: e.item.dir }; play('buzz'); haptic('bad'); }
+      if (e.type === 'catch') { flash = { t: performance.now(), ok: true, x: e.bone.x, y: e.bone.y }; play('good'); haptic('good'); if (game.caught === 3) hintEl.classList.remove('on'); }
+      else if (e.type === 'miss') { flash = { t: performance.now(), ok: false, x: e.bone.x, y: e.bone.y }; play('buzz'); haptic('bad'); }
+      else if (e.type === 'spawn') { play('pip'); haptic('tick'); }
       else if (e.type === 'stage' && e.up) {
         if (e.stage === 1) { play('stir'); haptic('stir'); headX.v = 60; padR.v = 5; }                    // もぞっ
         if (e.stage === 2) { play('miss'); haptic('snort'); headY.v = 150; padY.v = -260; padR.v = -9; }  // フガッ。パッドがはねる
@@ -327,7 +369,7 @@
       at(900, 3, function () { lift.t = 1; play('thud'); haptic('thud'); });                                         // 顔が出る。こっちを見ている
       if (t > 3200) result();          // 顔が出てから 2 秒ほど 見つめ合う
     } else if (endKind === 'clear') {
-      at(0, 1, function () { lcdMsg = T('クリア', 'CLEAR'); lcdMsg2 = game.caught + ' / ' + game.items.length; play('clear'); haptic('clear'); });
+      at(0, 1, function () { lcdMsg = T('クリア', 'CLEAR'); lcdMsg2 = game.caught + ' / ' + G.K.GOAL; play('clear'); haptic('clear'); });
       at(800, 2, function () { play('sigh'); });
       if (t > 1700) result();
     } else {
@@ -339,12 +381,12 @@
   var shareText = '';
   function result() {
     st = 'RESULT';
-    var ti = G.title(game), big = $('r-big'), rank = $('r-rank'), bones = game.caught, all = game.items.length, sl = game.sleepPct();
+    var ti = G.title(game), big = $('r-big'), rank = $('r-rank'), bones = game.caught, all = G.K.GOAL, sl = game.sleepPct();
     big.className = ''; rank.className = '';
     if (endKind === 'woke') {
       $('r-label').textContent = T('顔が 出た', 'The face came out'); big.className = 'word'; big.textContent = T('起こした', 'You woke him');
       rank.className = 'bad'; rank.textContent = T('ほね ', 'Bones ') + bones + T(' 本で おしまい', ', then game over');
-      $('r-line').textContent = T('そっと、ゆっくり。いびきが止まったら もっとそっと', 'Slow and gentle. Even gentler when the snoring stops');
+      $('r-line').textContent = T('そっと、ゆっくり。\nいびきが止まったら もっとそっと', 'Slow and gentle.\nEven gentler when the snoring stops');
       shareText = T('鼻ボタン ほね ' + bones + ' 本で犬を起こした', 'Nose Button: woke the dog after ' + bones + ' bones');
     } else {
       $('r-label').textContent = endKind === 'clear' ? T('クリア ・ 犬は 寝たまま', 'Cleared · the dog slept on') : T('液晶のゲームは おしまい ・ 犬は 寝たまま', 'Lost the little game · the dog slept on');
@@ -362,6 +404,15 @@
     else window.open('https://twitter.com/intent/tweet?text=' + encodeURIComponent(shareText) + '&url=' + encodeURIComponent(url), '_blank', 'noopener');
   });
   document.addEventListener('visibilitychange', function () { if (document.hidden && (st === 'PLAY' || st === 'ENDING')) toTitle(false); });
+  // スマホを縦にしたら(「横にして」の画面が出る)遊びは タイトルへ戻す
+  function onRotate() { if (mqRot.matches && (st === 'PLAY' || st === 'ENDING')) toTitle(false); }
+  // Android の Chrome は 全画面にすれば 横に固定できる。iPhone の Safari は できない(ボタンを出さない)
+  var rotBtn = $('b-rot'), canLock = !!(document.fullscreenEnabled && document.documentElement.requestFullscreen && screen.orientation && screen.orientation.lock);
+  $('rot-t').textContent = T('スマホを 横にして あそぶ', 'Turn your phone sideways');
+  rotBtn.textContent = T('横にする', 'Rotate'); rotBtn.hidden = !canLock;
+  rotBtn.addEventListener('click', function () {
+    document.documentElement.requestFullscreen().then(function () { return screen.orientation.lock('landscape'); }).catch(function () {});
+  });
 
   // ---- 毎コマ ----
   var last = 0;
@@ -375,9 +426,16 @@
       for (i = 0; i < L.length; i++) if (snoreT >= L[i].warn - 300 && snoreT < L[i].t1) quiet = true;
       if (snoreT - ts < 180) { if (!quiet) { play('snore', P0 + snoreT); play('whistle', P0 + snoreT + 700); } snoreT += 1500 - 500 * wake; }
       if (warnI < L.length && ts >= L[warnI].warn) { warnI++; play('stir'); haptic('stir'); padUp.t = 0.55; headX.v = 40; }
-      // ほねが 1 コマ進むたびに 液晶の ぴっ
-      while (tickI < chart.items.length && chart.items[tickI].t - chart.items[tickI].step * 3 - ts < 180) { var it = chart.items[tickI++]; for (var j = 3; j >= 1; j--) play('pip', P0 + it.t - it.step * j); }
+      // ほねが消えかけたら(点滅の はじめ)液晶の ぴっぴっ
+      var b = game.bone; if (b && b.i !== blinkI && b.t1 - ts < G.K.BLINK) { blinkI = b.i; play('ok'); }
+    } else if (st === 'TITLE' && ptr.down && tbone) {                  // 練習: 液晶の犬が 鼻で動く。ほねを たべたら「はなすと スタート」
+      var v = G.moveDog(tdog, raw.x, raw.y, dt); if (v[0] || v[1]) { var vm = Math.hypot(v[0], v[1]); tface = [v[0] / vm, v[1] / vm]; }
+      if (Math.hypot(tbone[0] - tdog[0], tbone[1] - tdog[1]) < G.K.EAT) {
+        tbone = null; wiggled = true; flash = { t: now, ok: true, x: 0, y: 0 }; play('good'); haptic('good');
+        titleEl.querySelector('p').textContent = T('指を はなすと はじまる', 'Let go to start');
+      }
     }
+    rubIdle(now);
     if (st === 'ENDING') ending(now);
     wakeShown += (wake - wakeShown) * Math.min(1, dt * 6);
     nx.step(dt); ny.step(dt); lx.step(dt); ly.step(dt); press.step(dt); headY.step(dt); headX.step(dt); lift.step(dt); padY.step(dt); padR.step(dt); padUp.step(dt);
@@ -397,6 +455,7 @@
   window.__hb = {
     get state() { return st; }, get game() { return game; }, get chart() { return chart; }, get P0() { return P0; }, get end() { return endKind; },
     get nose() { var r = cFx.getBoundingClientRect(); return { x: r.left + nose.x / W * r.width, y: r.top + nose.y / H * r.height, rs: RS / W * r.width, nx: nx.x, ny: ny.x }; },
+    get rub() { return rubPeak; }, resetRub: function () { rubPeak = 0; }, get land() { return LAND; }, get tdog() { return tdog; }, get tbone() { return tbone; },
     get sounds() { return soundLog; }, get haptics() { return hapticLog; }, get audio() { return AC ? AC.state : 'none'; },
     get press() { return press.x; }, get endStep() { return endStep; }, get endMs() { return st === 'ENDING' ? performance.now() - endT : -1; },
     level: function () { if (!analyser) return 0; var d = new Float32Array(analyser.fftSize), m = 0; analyser.getFloatTimeDomainData(d); for (var i = 0; i < d.length; i++) m = Math.max(m, Math.abs(d[i])); return m; },
@@ -405,7 +464,7 @@
 
   cLcd.id = 'lcd'; cPad.parentNode.insertBefore(cLcd, cFx);
   function sizeLcd() { cLcd.width = cPad.width; cLcd.height = cPad.height; cLcd.style.transformOrigin = cPad.style.transformOrigin; }
-  layout(); sizeLcd(); window.addEventListener('resize', function () { layout(); sizeLcd(); });
+  layout(); sizeLcd(); window.addEventListener('resize', function () { layout(); sizeLcd(); onRotate(); });
   Promise.all([load('dog', 'assets/dog.webp'), load('pad', 'assets/pad.webp'), load('thumb', 'assets/thumb.webp'),
     (document.fonts && document.fonts.load ? document.fonts.load('700 40px "ZenMaru"', 'あ').catch(function () {}) : 0)]).then(function () {
     glInit(); ready = true; layout(); sizeLcd(); toTitle(true); requestAnimationFrame(frame);
