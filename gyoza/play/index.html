@@ -48,7 +48,7 @@ body{font-family:var(--brush);font-weight:400;color:var(--ink);
 #title.en .sign{padding-left:calc(var(--u)*44);padding-right:calc(var(--u)*44)}
 #title p{margin:calc(var(--u)*34) 0 0;font-size:calc(var(--u)*46);letter-spacing:.04em;line-height:1.35}
 #title.off{opacity:0;transform:translateY(calc(var(--u)*-14))}
-#start{position:absolute;left:0;right:0;bottom:calc(var(--u)*120 + env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center;gap:calc(var(--u)*30);transition:opacity 200ms var(--ease-out)}
+#start{position:absolute;left:0;right:0;bottom:calc(var(--u)*120 + env(safe-area-inset-bottom) + var(--gz-ad,0px));display:flex;flex-direction:column;align-items:center;gap:calc(var(--u)*30);transition:opacity 200ms var(--ease-out)}
 #start.off{opacity:0;pointer-events:none}
 #start.off button{pointer-events:none}
 /* 大将の声 = 品書きの前に出る 漆の札(壁の字と 重なっても 読める) */
@@ -60,7 +60,7 @@ body{font-family:var(--brush);font-weight:400;color:var(--ink);
 #hint{font-family:var(--brush);bottom:calc(var(--u)*120 + env(safe-area-inset-bottom));font-size:calc(var(--u)*44);text-wrap:balance;letter-spacing:.04em;padding:0 calc(var(--u)*60);opacity:0;transition:opacity 200ms var(--ease-out)}
 #hint.on{opacity:1}
 /* 結果 = 品書きの札 */
-#result{bottom:calc(var(--u)*56 + env(safe-area-inset-bottom));opacity:0;visibility:hidden;text-shadow:none}
+#result{bottom:calc(var(--u)*56 + env(safe-area-inset-bottom) + var(--gz-ad,0px));opacity:0;visibility:hidden;text-shadow:none}
 #result.on{visibility:visible;opacity:1}
 /* 品書きの札: 生成りの紙に 朱罫 1 本だけ */
 .board{position:relative;margin:0 auto;width:calc(var(--u)*860);padding:calc(var(--u)*30) calc(var(--u)*44) calc(var(--u)*34);border-radius:calc(var(--u)*4);

@@ -55,6 +55,8 @@
   // trigger = 引き金 / spin・load = 回している間(皮に入ると強く)/ perfect = ぴたっ と座った / tear = やぶれ / clear・bad = 結果 / ui = 設定の札
   var HAPT = { trigger: 8, spin: 14, load: 34, perfect: [12, 30, 22], ok: 14, loose: 6, tear: [70, 30, 130], gear: [10, 40, 10], plate: 10, plop: 8, open: [20, 30, 40], clear: [20, 60, 20, 60, 40], bad: 120, ui: 6 };
   var hapticLog = [];
+  // アプリ(WebView)に いまの画面を知らせる(題名・結果だけ 下にバナーを出すため)。Web 版では何もしない
+  function nativeScreen(n) { try { if (window.GZNative && window.GZNative.screen) window.GZNative.screen(n); } catch (e) {} }
   function haptic(kind) {
     if (!SET.vib) return;
     hapticLog.push(kind); if (hapticLog.length > 600) hapticLog.shift();
@@ -382,7 +384,7 @@
     game = new G.Game(seed); T0 = now(); vis = {}; vis[0] = { inT: now() - 1000 };
     parts = []; pops = []; leaving = []; stains = []; tray = []; boil = null; endKind = null;
     drill.away = 0; drill.gearK.t = 0; drill.gearK.x = 0; drill.rpm = 0; sq.t = 1; sq.x = 1;
-    st = 'PLAY'; menuHung = false; drawBg();
+    st = 'PLAY'; menuHung = false; drawBg(); nativeScreen('play');
     resEl.classList.remove('on'); startEl.classList.add('off'); titleEl.classList.add('off');
     hintEl.textContent = T('長押しで ネジを締める。頭が皮に沈んだら 離す', 'Hold to drive the screw. Let go when the head sinks in.'); setOpen(false); hintEl.classList.add('on');
     play('boss'); say(T('大将「お前の包んだのは 茹でたら開くねん」', 'Chef: "Yours always pop open in the pot."'), 3000); bgmLayer(0);
@@ -410,7 +412,7 @@
   var shareText = '';
   // 結果 = 店の品書き札。開かなかった数だけが「ネジ水餃子」として 今日の品書きに載る
   function showResult() {
-    st = 'RESULT'; bgmLayer(0); var k = endKind, c = game.closed, big = $('r-big'), rk = $('r-rank'), ko = JA ? '<small>コ</small>' : ''; big.className = ''; rk.className = '';
+    st = 'RESULT'; nativeScreen('result'); bgmLayer(0); var k = endKind, c = game.closed, big = $('r-big'), rk = $('r-rank'), ko = JA ? '<small>コ</small>' : ''; big.className = ''; rk.className = '';
     var stat = [T('分速 ' + game.perMin() + ' コ', game.perMin() + '/min'), T('ぴたっ ' + game.flush() + '%', 'Flush ' + game.flush() + '%'), T('開いた ' + game.opened + ' コ', 'Opened ' + game.opened)];
     $('r-head').textContent = T('本日の品書き', "Today's menu");
     if (k === 'clear') {
@@ -659,7 +661,7 @@
   Promise.all(['shop', 'shop_pot', 'dumpling', 'dumpling_open', 'hand', 'hand_thin', 'hand_torn', 'head', 'drill', 'screw', 'drill_side'].map(function (n) { return load(n, 'assets/' + n + '.webp'); }).concat([ document.fonts ? document.fonts.load('40px "ReggaeOne"', '餃子とドリルDumplings&Drill').catch(function () {}) : null, document.fonts ? document.fonts.load('40px "YujiSyuku"', '餃子麻婆豆腐ぴたっ').catch(function () {}) : null, document.fonts ? Promise.all(['500', '700', '900'].map(function (w) { return document.fonts.load(w + ' 40px "ChironSung"', '餃子0123Aa'); })).catch(function () {}) : null])).then(function () {
     ['hand', 'hand_thin', 'hand_torn'].forEach(function (n) { spr[n] = bake(img[n], HS, 34, 30); }); spr.drill = bake(img.drill, DRL_F.ds, 30, 34); spr.drill_side = bake(img.drill_side, DRL_S.ds, 30, 34);
     ready = true; layout();
-    game = new G.Game(1); vis[0] = { inT: -1000 }; st = 'TITLE'; lastT = now();
+    game = new G.Game(1); vis[0] = { inT: -1000 }; st = 'TITLE'; lastT = now(); nativeScreen('title');
     titleEl.querySelector('h1').innerHTML = T('餃子<span class="to">と</span><br><span class="l2">ドリル</span>', 'Dumplings<br><span class="l2">&amp; Drill</span>');   // 題字 = Reggae One。「と」は小さく
     if (!JA) titleEl.classList.add('en');
     titleEl.querySelector('p').innerHTML = T('開店まで 45 秒<br>茹でても開かないように ネジで閉める', '45 seconds till we open.<br>Screw them shut so they survive the pot.');
