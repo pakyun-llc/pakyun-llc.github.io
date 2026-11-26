@@ -4,67 +4,115 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="robots" content="noindex">
-<meta name="theme-color" content="#b98d55">
+<meta name="theme-color" content="#2c160e">
 <link rel="icon" href="data:,">
 <title>餃子とドリル</title>
 <style>
 @font-face{font-family:"YujiBoku";src:url("fonts/YujiBoku.subset.woff") format("woff");font-weight:400;font-display:block}
 @font-face{font-family:"GZNum";src:url("fonts/ShipporiNum.subset.woff") format("woff");font-weight:400;font-display:block}
-:root{--ink:#241a12;--paper:#fff6e6;--red:#b5281c;--ease-out:cubic-bezier(.23,1,.32,1);--u:1px}
+/* 町中華の色: 墨・品書きの紙・朱の漆・金(看板の字と 雷文)・こげ茶(木) */
+:root{--ink:#241a12;--paper:#f6ead0;--red:#b5281c;--lacq:#8e1a10;--gold:#d6a84a;--wood:#2c160e;--ease-out:cubic-bezier(.23,1,.32,1);--u:1px;
+  /* 雷文(四角い うず)の帯。看板と 設定の札の 上下に使う */
+  --meander:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M0 21H21V3H5V17H17V7H9V13H13' fill='none' stroke='%23d6a84a' stroke-width='2.4' stroke-linecap='square'/%3E%3C/svg%3E")}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;height:100%;background:#1d1611;overflow:hidden;overscroll-behavior:none}
+html,body{margin:0;height:100%;background:#1a0c07;overflow:hidden;overscroll-behavior:none}
 body{font-family:"YujiBoku","GZNum","Hiragino Mincho ProN","Yu Mincho",serif;font-weight:400;color:var(--ink);
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none}
-#stage{position:absolute;left:50%;top:0;transform:translateX(-50%);overflow:hidden;background:#b98d55}
+#stage{position:absolute;left:50%;top:0;transform:translateX(-50%);overflow:hidden;background:#8e1a10}
 #stage canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block}
 #fx{touch-action:none;cursor:pointer}
-/* 字は写真の上に じかに置く(帯・カードなし)。明るい机なので 墨色の字を 紙色のにじみで支える */
+/* 字は 店の壁・卓の上に じかに置く。墨色の字を 紙色のにじみで支える */
 .txt{position:absolute;left:0;right:0;text-align:center;pointer-events:none;
-  text-shadow:0 0 calc(var(--u)*5) var(--paper),0 0 calc(var(--u)*5) var(--paper),0 0 calc(var(--u)*14) var(--paper),0 0 calc(var(--u)*28) rgba(255,246,230,.95),0 0 calc(var(--u)*44) rgba(255,246,230,.8)}
-#title{top:calc(var(--u)*150 + env(safe-area-inset-top));transition:opacity 200ms var(--ease-out),transform 200ms var(--ease-out)}
-#title h1{margin:0;font-weight:400;font-size:calc(var(--u)*150);line-height:1.12;letter-spacing:.02em}
-#title.en h1{font-size:calc(var(--u)*118)}
-#title p{margin:calc(var(--u)*20) 0 0;font-size:calc(var(--u)*44);letter-spacing:.04em}
+  text-shadow:0 0 calc(var(--u)*5) var(--paper),0 0 calc(var(--u)*5) var(--paper),0 0 calc(var(--u)*14) var(--paper),0 0 calc(var(--u)*28) rgba(246,234,208,.95),0 0 calc(var(--u)*44) rgba(246,234,208,.8)}
+/* 題名 = 店の看板(朱の漆に 金の字、上下に 雷文) */
+#title{top:calc(var(--u)*130 + env(safe-area-inset-top));transition:opacity 200ms var(--ease-out),transform 200ms var(--ease-out)}
+.sign{position:relative;display:inline-block;padding:calc(var(--u)*58) calc(var(--u)*74) calc(var(--u)*54);border-radius:calc(var(--u)*8);text-shadow:none;
+  background:radial-gradient(120% 90% at 30% 20%,#c9361f 0%,#a2231a 55%,#7a140c 100%);
+  box-shadow:inset 0 0 0 calc(var(--u)*7) var(--wood),inset 0 0 0 calc(var(--u)*10) var(--gold),inset 0 0 0 calc(var(--u)*13) #6e1009,0 calc(var(--u)*18) calc(var(--u)*40) rgba(20,4,0,.55)}
+.sign::before,.sign::after,.panel h2::before,.panel h2::after{content:"";position:absolute;left:calc(var(--u)*22);right:calc(var(--u)*22);height:calc(var(--u)*24);
+  background:var(--meander) repeat-x center/calc(var(--u)*24) calc(var(--u)*24);opacity:.85}
+.sign::before{top:calc(var(--u)*20)}.sign::after{bottom:calc(var(--u)*20)}
+#title h1{margin:0;font-weight:400;font-size:calc(var(--u)*150);line-height:1.1;letter-spacing:.04em;color:#f7d98e;
+  text-shadow:0 calc(var(--u)*4) 0 #4e0b05,0 0 calc(var(--u)*18) rgba(255,190,90,.35)}
+#title.en h1{font-size:calc(var(--u)*112)}
+#title p{margin:calc(var(--u)*34) 0 0;font-size:calc(var(--u)*44);letter-spacing:.04em}
 #title.off{opacity:0;transform:translateY(calc(var(--u)*-14))}
-#start{position:absolute;left:0;right:0;bottom:calc(var(--u)*150 + env(safe-area-inset-bottom));text-align:center;transition:opacity 200ms var(--ease-out)}
+#start{position:absolute;left:0;right:0;bottom:calc(var(--u)*120 + env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center;gap:calc(var(--u)*30);transition:opacity 200ms var(--ease-out)}
 #start.off{opacity:0;pointer-events:none}
-#boss{top:calc(var(--u)*170 + env(safe-area-inset-top));font-size:calc(var(--u)*54);line-height:1.25;text-wrap:balance;padding:0 calc(var(--u)*50);opacity:0;transform:translateY(calc(var(--u)*-10));
+#start.off button{pointer-events:none}
+/* 大将の声 = 品書きの前に出る 漆の札(壁の字と 重なっても 読める) */
+#boss{top:calc(var(--u)*176 + env(safe-area-inset-top));padding:0 calc(var(--u)*40);opacity:0;transform:translateY(calc(var(--u)*-10));text-shadow:none;
   transition:opacity 160ms var(--ease-out),transform 160ms var(--ease-out)}
+#boss span{display:inline-block;max-width:100%;font-size:calc(var(--u)*50);line-height:1.3;text-wrap:balance;color:var(--paper);padding:calc(var(--u)*22) calc(var(--u)*40);border-radius:calc(var(--u)*10);
+  background:rgba(40,18,10,.9);box-shadow:inset 0 0 0 calc(var(--u)*3) var(--gold),0 calc(var(--u)*10) calc(var(--u)*26) rgba(20,4,0,.45)}
 #boss.on{opacity:1;transform:none;transition-duration:220ms}
 #hint{bottom:calc(var(--u)*120 + env(safe-area-inset-bottom));font-size:calc(var(--u)*44);text-wrap:balance;letter-spacing:.04em;padding:0 calc(var(--u)*60);opacity:0;transition:opacity 200ms var(--ease-out)}
 #hint.on{opacity:1}
-#result{bottom:calc(var(--u)*64 + env(safe-area-inset-bottom));opacity:0;visibility:hidden}
+/* 結果 = 品書きの札 */
+#result{bottom:calc(var(--u)*56 + env(safe-area-inset-bottom));opacity:0;visibility:hidden;text-shadow:none}
 #result.on{visibility:visible;opacity:1}
-#result>*{opacity:0;transform:translateY(calc(var(--u)*16));transition:opacity 260ms var(--ease-out),transform 260ms var(--ease-out)}
-#result.on>*{opacity:1;transform:none}
-#result.on>*:nth-child(2){transition-delay:50ms}#result.on>*:nth-child(3){transition-delay:90ms}
-#result.on>*:nth-child(4){transition-delay:120ms}#result.on>*:nth-child(5){transition-delay:150ms}#result.on>*:nth-child(6){transition-delay:190ms}
-#r-label{font-size:calc(var(--u)*46);letter-spacing:.06em}
-#r-big{font-size:calc(var(--u)*210);line-height:1.05;font-variant-numeric:tabular-nums}
-#r-big small{font-size:.42em;margin-left:.08em}
-#r-big.word{font-size:calc(var(--u)*150);line-height:1.2}
-#r-rank{font-size:calc(var(--u)*70);color:var(--red);margin-top:calc(var(--u)*2)}
+.board{position:relative;margin:0 auto;width:calc(var(--u)*860);padding:0 calc(var(--u)*40) calc(var(--u)*34);border-radius:calc(var(--u)*6);
+  background:linear-gradient(#f8eed6,#efdfbb);box-shadow:inset 0 0 0 calc(var(--u)*6) var(--lacq),inset 0 0 0 calc(var(--u)*9) var(--gold),0 calc(var(--u)*18) calc(var(--u)*44) rgba(20,4,0,.6)}
+#result .board>*,#r-btns{opacity:0;transform:translateY(calc(var(--u)*16));transition:opacity 260ms var(--ease-out),transform 260ms var(--ease-out)}
+#result.on .board>*,#result.on #r-btns{opacity:1;transform:none}
+#result.on .board>*:nth-child(2){transition-delay:40ms}#result.on .board>*:nth-child(3){transition-delay:80ms}#result.on .board>*:nth-child(4){transition-delay:110ms}
+#result.on .board>*:nth-child(5){transition-delay:140ms}#result.on .board>*:nth-child(6){transition-delay:170ms}#result.on .board>*:nth-child(7){transition-delay:200ms}#result.on #r-btns{transition-delay:230ms}
+#r-head{margin:0 calc(var(--u)*-40);padding:calc(var(--u)*20) 0 calc(var(--u)*16);font-size:calc(var(--u)*40);letter-spacing:.3em;color:#f7d98e;border-radius:calc(var(--u)*6) calc(var(--u)*6) 0 0;
+  background:linear-gradient(#a8251a,#861910);box-shadow:inset 0 0 0 calc(var(--u)*6) var(--lacq),inset 0 calc(var(--u)*-3) 0 var(--gold)}
+#r-dish{font-size:calc(var(--u)*84);margin-top:calc(var(--u)*22);letter-spacing:.06em}
+html[lang=en] #r-dish{font-size:calc(var(--u)*66)}
+.lat{font-family:"Hiragino Mincho ProN","Yu Mincho",serif;font-weight:700}
+#r-label{font-size:calc(var(--u)*40);letter-spacing:.06em;margin-top:calc(var(--u)*4)}
+#r-big{font-size:calc(var(--u)*190);line-height:1.04;font-variant-numeric:tabular-nums;color:var(--red)}
+#r-big small{font-size:.4em;margin-left:.08em;color:var(--ink)}
+#r-big.word{font-size:calc(var(--u)*130);line-height:1.2}
+#r-rank{font-size:calc(var(--u)*66);color:var(--red)}
 #r-rank.bad{color:var(--ink)}
-#r-line{font-size:calc(var(--u)*48);margin-top:calc(var(--u)*14);padding:0 calc(var(--u)*40)}
-#r-stat{font-size:calc(var(--u)*36);margin-top:calc(var(--u)*12)}
-#r-btns{margin-top:calc(var(--u)*30);display:flex;justify-content:center;gap:calc(var(--u)*26);pointer-events:auto;text-shadow:none}
-button{font:inherit;color:var(--ink);background:var(--paper);border:0;border-radius:calc(var(--u)*14);height:calc(var(--u)*116);padding:0 calc(var(--u)*60);
-  font-size:calc(var(--u)*48);box-shadow:0 calc(var(--u)*6) calc(var(--u)*20) rgba(36,26,18,.34);transition:transform 140ms var(--ease-out);touch-action:manipulation;cursor:pointer;pointer-events:auto}
+#r-rank:empty{display:none}
+#r-line{font-size:calc(var(--u)*44);margin-top:calc(var(--u)*10)}
+#r-stat{font-size:calc(var(--u)*34);margin-top:calc(var(--u)*12);opacity:.85}
+#r-stat:empty{display:none}
+#r-btns{margin-top:calc(var(--u)*30);display:flex;justify-content:center;gap:calc(var(--u)*22);pointer-events:auto}
+/* ボタン: 押す物 = 朱の漆に 金の縁 / ほか = 品書きの紙に 朱の縁 */
+button{font:inherit;color:var(--ink);background:var(--paper);border:0;border-radius:calc(var(--u)*12);height:calc(var(--u)*116);padding:0 calc(var(--u)*56);
+  font-size:calc(var(--u)*48);box-shadow:inset 0 0 0 calc(var(--u)*4) var(--red),0 calc(var(--u)*8) calc(var(--u)*22) rgba(20,4,0,.4);
+  transition:transform 140ms var(--ease-out);touch-action:manipulation;cursor:pointer;pointer-events:auto;text-shadow:none}
 button:active{transform:scale(.97)}
-button.main{background:var(--red);color:var(--paper)}
-button:focus-visible{outline:calc(var(--u)*6) solid var(--ink);outline-offset:calc(var(--u)*6)}
-@media (prefers-reduced-motion:reduce){#title,#boss,#result>*{transition-duration:1ms}}
+button.main{background:linear-gradient(#c8321f,#99200f);color:#f9dc96;box-shadow:inset 0 0 0 calc(var(--u)*5) var(--lacq),inset 0 0 0 calc(var(--u)*7) var(--gold),0 calc(var(--u)*8) calc(var(--u)*22) rgba(20,4,0,.45)}
+button.sub{height:calc(var(--u)*92);font-size:calc(var(--u)*40);padding:0 calc(var(--u)*44)}
+button:focus-visible{outline:calc(var(--u)*6) solid var(--gold);outline-offset:calc(var(--u)*6)}
+/* 設定(品書きの札と同じ作り。開くと 店が少し暗くなる) */
+#set{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(20,6,2,.55);opacity:0;visibility:hidden;
+  transition:opacity 200ms var(--ease-out),visibility 0s linear 200ms;touch-action:manipulation}
+#set.on{opacity:1;visibility:visible;transition:opacity 220ms var(--ease-out)}
+.panel{position:relative;width:calc(var(--u)*940);max-height:94%;overflow:auto;border-radius:calc(var(--u)*8);padding:0 calc(var(--u)*46) calc(var(--u)*44);
+  background:linear-gradient(#f8eed6,#efdfbb);box-shadow:inset 0 0 0 calc(var(--u)*6) var(--lacq),inset 0 0 0 calc(var(--u)*9) var(--gold),0 calc(var(--u)*24) calc(var(--u)*60) rgba(0,0,0,.6);
+  transform:scale(.96) translateY(calc(var(--u)*12));transition:transform 200ms var(--ease-out)}
+#set.on .panel{transform:none;transition-duration:240ms}
+.panel h2{position:relative;margin:0 calc(var(--u)*-46) calc(var(--u)*16);padding:calc(var(--u)*50) 0 calc(var(--u)*48);font-weight:400;font-size:calc(var(--u)*64);letter-spacing:.3em;text-align:center;color:#f7d98e;
+  border-radius:calc(var(--u)*8) calc(var(--u)*8) 0 0;background:linear-gradient(#a8251a,#861910);box-shadow:inset 0 0 0 calc(var(--u)*6) var(--lacq),inset 0 calc(var(--u)*-3) 0 var(--gold)}
+.panel h2::before{top:calc(var(--u)*14)}.panel h2::after{bottom:calc(var(--u)*14)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:calc(var(--u)*20);padding:calc(var(--u)*24) 0;border-bottom:calc(var(--u)*2) dashed rgba(36,26,18,.18)}
+.row .lab{font-size:calc(var(--u)*46);letter-spacing:.06em;white-space:nowrap}
+.row .cap{flex-basis:100%;font-size:calc(var(--u)*34);opacity:.75;margin-top:calc(var(--u)*-6)}
+.row.wrap{flex-wrap:wrap}
+.seg{display:flex;gap:calc(var(--u)*12)}
+.seg button{white-space:nowrap;height:calc(var(--u)*100);min-width:calc(var(--u)*130);padding:0 calc(var(--u)*26);font-size:calc(var(--u)*42);box-shadow:inset 0 0 0 calc(var(--u)*3) rgba(181,40,28,.6)}
+.seg button[aria-pressed="true"]{background:linear-gradient(#c8321f,#99200f);color:#f9dc96;box-shadow:inset 0 0 0 calc(var(--u)*4) var(--lacq),inset 0 0 0 calc(var(--u)*6) var(--gold)}
+#s-close{display:block;margin:calc(var(--u)*36) auto 0;min-width:calc(var(--u)*360)}
+@media (prefers-reduced-motion:reduce){#title,#boss,#result .board>*,#r-btns,.panel,#set{transition-duration:1ms}}
 </style>
 </head>
 <body>
 <div id="stage">
   <canvas id="bg"></canvas><canvas id="fx"></canvas>
-  <div id="title" class="txt"><h1></h1><p></p></div>
-  <div id="boss" class="txt"></div>
+  <div id="title" class="txt"><div class="sign"><h1></h1></div><p></p></div>
+  <div id="boss" class="txt"><span></span></div>
   <div id="hint" class="txt"></div>
-  <div id="start"><button id="b-in" class="main"></button></div>
-  <div id="result" class="txt"><div id="r-label"></div><div id="r-big"></div><div id="r-rank"></div><div id="r-line"></div><div id="r-stat"></div>
-    <div id="r-btns"><button id="b-again" class="main"></button><button id="b-share"></button></div></div>
+  <div id="start"><button id="b-in" class="main"></button><button id="b-set" class="sub"></button></div>
+  <div id="result" class="txt"><div class="board"><div id="r-head"></div><div id="r-dish"></div><div id="r-label"></div><div id="r-big"></div><div id="r-rank"></div><div id="r-line"></div><div id="r-stat"></div></div>
+    <div id="r-btns"><button id="b-again" class="main"></button><button id="b-share"></button><button id="b-set2"></button></div></div>
+  <div id="set" role="dialog" aria-modal="true" aria-labelledby="s-title"><div class="panel"><h2 id="s-title"></h2><div id="s-rows"></div><button id="s-close" class="main"></button></div></div>
 </div>
 <script src="js/game.js"></script>
 <script src="js/main.js"></script>
