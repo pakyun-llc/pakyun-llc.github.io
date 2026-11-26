@@ -49,7 +49,7 @@ body{font-family:var(--brush);font-weight:400;color:var(--ink);
 /* 大将の声 = 品書きの前に出る 漆の札(壁の字と 重なっても 読める) */
 #boss{top:calc(var(--u)*176 + env(safe-area-inset-top));padding:0 calc(var(--u)*40);opacity:0;transform:translateY(calc(var(--u)*-10));text-shadow:none;
   transition:opacity 160ms var(--ease-out),transform 160ms var(--ease-out)}
-#boss span{display:inline-block;max-width:100%;font-size:calc(var(--u)*54);line-height:1.3;text-wrap:balance;color:var(--ink);padding:calc(var(--u)*22) calc(var(--u)*44);border-radius:calc(var(--u)*4);
+#boss span{display:inline-block;max-width:100%;word-break:keep-all;font-size:calc(var(--u)*54);line-height:1.3;text-wrap:balance;color:var(--ink);padding:calc(var(--u)*22) calc(var(--u)*44);border-radius:calc(var(--u)*4);
   background:linear-gradient(#f5ead2,#eadbb9);box-shadow:inset 0 0 0 calc(var(--u)*2) rgba(48,37,29,.28),0 calc(var(--u)*10) calc(var(--u)*24) rgba(20,4,0,.45)}
 #boss.on{opacity:1;transform:none;transition-duration:220ms}
 #hint{font-family:var(--brush);bottom:calc(var(--u)*120 + env(safe-area-inset-bottom));font-size:calc(var(--u)*44);text-wrap:balance;letter-spacing:.04em;padding:0 calc(var(--u)*60);opacity:0;transition:opacity 200ms var(--ease-out)}
