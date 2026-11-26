@@ -38,8 +38,11 @@
   function holdFor(x, len, gear) { return contactMs(len, gear) + x / (V * gear * LOAD / 1000); }
   function grade(x, skin) { var s = SKIN[skin]; return x >= s.tear ? 'tear' : x < 0 ? 'loose' : (x >= s.p0 && x <= s.p1) ? 'perfect' : 'ok'; }
 
-  function Game(seed) {
+  // cfg = その面の決まり(省くと 前からの 45 秒の 1 本)。time / quota / tears / phases(上の STAGES と同じ形)
+  var CLASSIC = { time: SHIFT_MS, quota: QUOTA, tears: MAX_TEARS, phases: STAGES };
+  function Game(seed, cfg) {
     this.seed = seed || 1; this.r = rng(this.seed);
+    cfg = cfg || CLASSIC; this.cfg = cfg; this.P = cfg.phases; this.TIME = cfg.time || SHIFT_MS; this.QUOTA = cfg.quota || QUOTA; this.TEARS = cfg.tears || MAX_TEARS;
     this.phase = 'wait';       // wait(まだ引いていない)/ ready / drill / hop / swap / over
     this.firstT = null; this.endT = null; this.readyT = 0; this.t0 = 0;
     this.down = false; this.fresh = false;
@@ -49,13 +52,13 @@
     this.over = null; this.log = [];
     this._spawn(0);
   }
-  Game.prototype._stageAt = function (t) { var e = this.firstT == null ? 0 : t - this.firstT, s = 0; for (var i = 0; i < STAGES.length; i++) if (e >= STAGES[i].from) s = i; return s; };
+  Game.prototype._stageAt = function (t) { var e = this.firstT == null ? 0 : t - this.firstT, s = 0; for (var i = 0; i < this.P.length; i++) if (e >= this.P[i].from) s = i; return s; };
   Game.prototype._spawn = function (t) {
-    var st = STAGES[this._stageAt(t)], r = this.r, n = st.screws[Math.floor(r() * st.screws.length)], sc = [];
+    var st = this.P[this._stageAt(t)], r = this.r, n = st.screws[Math.floor(r() * st.screws.length)], sc = [];
     for (var i = 0; i < n; i++) { var k = st.lens[Math.floor(r() * st.lens.length)]; sc.push({ len: LEN[k], kind: k, grade: null, x: -LEN[k] }); }
     this.cur = { id: this.n++, screws: sc, i: 0, skin: r() < st.thin ? 'thin' : 'normal', result: null };
   };
-  Game.prototype.gear = function () { return STAGES[this.stage].gear; };
+  Game.prototype.gear = function () { return this.P[this.stage].gear; };
   // いまの(引いている途中の)ネジの x。引いていなければ 置いたままの値
   Game.prototype.depth = function (t) {
     var c = this.cur; if (!c) return 0; var s = c.screws[Math.min(c.i, c.screws.length - 1)];
@@ -63,7 +66,7 @@
     return s.x;
   };
   Game.prototype._start = function (t, out) {
-    if (this.firstT == null) { this.firstT = t; this.endT = t + SHIFT_MS; }
+    if (this.firstT == null) { this.firstT = t; this.endT = t + this.TIME; }
     this.phase = 'drill'; this.t0 = t; this.g0 = this.gear(); this.fresh = false; this.pulls++;
     var s = this.cur.screws[this.cur.i]; this.tearT = t + holdFor(SKIN[this.cur.skin].tear, s.len, this.g0);
     out.push({ type: 'start', t: t, screw: this.cur.i });
@@ -75,7 +78,7 @@
     out.push({ type: 'judge', t: t, grade: g, x: x, screw: c.i, d: c.id });
     if (g === 'tear') {
       c.result = 'torn'; this.tears++; out.push({ type: 'dumpling', t: t, result: 'torn', d: c });
-      if (this.tears >= MAX_TEARS) return this._end('fired', t, out);
+      if (this.tears >= this.TEARS) return this._end('fired', t, out);
       this.phase = 'swap'; this.readyT = t + TEAR_MS; return;
     }
     if (c.i >= c.screws.length - 1) {
@@ -94,7 +97,7 @@
       if (this.firstT == null) { if (t >= IDLE_MS) this._end('idle', IDLE_MS, out); break; }
       // つぎに起きること(早い順): 店長の合図 / ラッシュ終わり / 破れる / 次の準備
       var ev = null, et = Infinity, ns = this.stage + 1;
-      if (ns < STAGES.length && this.firstT + STAGES[ns].from < et) { ev = 'stage'; et = this.firstT + STAGES[ns].from; }
+      if (ns < this.P.length && this.firstT + this.P[ns].from < et) { ev = 'stage'; et = this.firstT + this.P[ns].from; }
       if (this.phase === 'drill' && this.tearT < et) { ev = 'tear'; et = this.tearT; }
       if ((this.phase === 'hop' || this.phase === 'swap') && this.readyT < et) { ev = 'ready'; et = this.readyT; }
       if (this.endT <= et) { ev = 'timeup'; et = this.endT; }
@@ -106,7 +109,7 @@
         this.phase = 'ready'; if (this.down && this.fresh) this._start(et, out);
       } else {
         out.push({ type: 'timeup', t: et });
-        this._end(this.closed >= QUOTA ? 'clear' : this.opened > this.closed ? 'soup' : 'slow', et, out);
+        this._end(this.closed >= this.QUOTA ? 'clear' : this.opened > this.closed ? 'soup' : 'slow', et, out);
       }
     }
     return out;
@@ -119,14 +122,15 @@
     else if (this.phase === 'drill') this._judge(t, out);
     return out;
   };
-  Game.prototype.left = function (t) { return this.firstT == null ? SHIFT_MS : Math.max(0, this.endT - t); };
-  Game.prototype.perMin = function () { return Math.round(this.closed * 600000 / SHIFT_MS) / 10; };
+  Game.prototype.left = function (t) { return this.firstT == null ? this.TIME : Math.max(0, this.endT - t); };
+  Game.prototype.perMin = function () { return Math.round(this.closed * 600000 / this.TIME) / 10; };
   Game.prototype.flush = function () { return this.driven ? Math.round(this.perfect / this.driven * 100) : 0; };
 
   // 茹でても開かなかった数 → 肩書き(0 がいちばん上)
-  function rank(closed) { return closed >= 10 ? 0 : closed >= 8 ? 1 : closed >= 6 ? 2 : 3; }
+  // q = その面のノルマ(省くと 5 = 前からの線 10 / 8 / 6)、top = いちばん上の線(省くと q の 2 倍)
+  function rank(closed, q, top) { q = q || QUOTA; return closed >= (top || q * 2) ? 0 : closed >= q + 3 ? 1 : closed >= q + 1 ? 2 : 3; }
 
-  var api = { Game: Game, rng: rng, xAt: xAt, holdFor: holdFor, contactMs: contactMs, grade: grade, rank: rank,
+  var api = { Game: Game, CLASSIC: CLASSIC, rng: rng, xAt: xAt, holdFor: holdFor, contactMs: contactMs, grade: grade, rank: rank,
     K: { SHIFT_MS: SHIFT_MS, IDLE_MS: IDLE_MS, SPIN_MS: SPIN_MS, V: V, LOAD: LOAD, HOP_MS: HOP_MS, SWAP_MS: SWAP_MS, TEAR_MS: TEAR_MS, MAX_TEARS: MAX_TEARS, QUOTA: QUOTA, SKIN: SKIN, LEN: LEN, STAGES: STAGES } };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.GZGame = api;
 })(typeof window !== 'undefined' ? window : globalThis);
