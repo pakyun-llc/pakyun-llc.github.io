@@ -43,7 +43,7 @@
 
 <h2>3. Face data</h2>
 <ul>
-  <li><strong>What is collected</strong>: Using the device's on-device image recognition (Apple's Vision framework), the App reads only <strong>the approximate positions (image coordinates) of the eyes and nose</strong> of animals such as dogs and cats, or of human faces, in the photo or video you chose.</li>
+  <li><strong>What is collected</strong>: Using the device's on-device image recognition (Apple's Vision framework), the App reads only <strong>the approximate positions (image coordinates) of the eyes and nose</strong> of animals such as dogs and cats, or of human faces, in the photo or video you chose. The Android and Web versions do the same on the device (in the browser) with image-recognition models (RTMPose, YOLOX; human faces on Android use Google ML Kit).</li>
   <li><strong>How it is used</strong>: Only to decide where and at what angle to place the tape brows above the eyes. It is not used to identify any person or animal, for face recognition, to build face templates, for advertising or for analytics.</li>
   <li><strong>Storage and sharing</strong>: These coordinates are kept in memory while you edit. <strong>They are not stored, not sent off the device and not shared with any third party</strong>, including the advertising SDK.</li>
   <li><strong>Retention</strong>: They are discarded when you choose another photo or video, or close the App.</li>
@@ -69,16 +69,22 @@
   <li>See <a href="https://policies.google.com/technologies/partner-sites" target="_blank" rel="noopener">Google's policies</a> for how Google handles data.</li>
 </ul>
 
-<h2>6. Deleting data</h2>
+<h2>6. Android version</h2>
+<ul>
+  <li>The Android version uses Google ML Kit (face detection) on the device. ML Kit may send usage statistics (not images or face data) to Google to improve the service. See the <a href="https://developers.google.com/ml-kit/terms" target="_blank" rel="noopener">ML Kit terms</a>.</li>
+  <li>On Android you can reset or delete the advertising ID in the device settings.</li>
+</ul>
+
+<h2>7. Deleting data</h2>
 <p>All App data stays on your device. Deleting the App removes its settings. Images and videos you saved can be deleted in the Photos app.</p>
 
-<h2>7. Contact</h2>
+<h2>8. Contact</h2>
 <div class="contact">
   <p>Questions about this policy:</p>
   <p>Developer: Pakyun LLC<br>Email: info@pakyun.net</p>
 </div>
 
-<h2>8. Changes</h2>
+<h2>9. Changes</h2>
 <p>This policy may be updated. Significant changes will be announced on this page.</p>
 <footer>© 2026 Pakyun LLC. All rights reserved.</footer>
 </div>
