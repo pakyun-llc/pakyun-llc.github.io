@@ -16,7 +16,7 @@
 @font-face{font-family:"ZenKaku";src:url("fonts/ZenKakuGothicNew-900.subset.woff") format("woff");font-weight:800 900;font-display:block}
 @font-face{font-family:"YujiSyuku";src:url("fonts/YujiSyuku.subset.woff") format("woff");font-weight:400;font-display:block}
 /* 色は 看板の赤と 紙の白が主役。墨は字だけ */
-:root{--ink:#231a14;--paper:#fbf7ef;--red:#c8241b;--red-d:#a01a12;--ui:"ZenKaku","Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;--sign:"Potta","ZenKaku",sans-serif;
+:root{--ink:#231a14;--paper:#fbf7ef;--red:#c8241b;--red-d:#a01a12;--ui:"ZenKaku","Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
   --ease-out:cubic-bezier(.23,1,.32,1);--u:1px}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;background:#1a0c07;overflow:hidden;overscroll-behavior:none}
@@ -27,18 +27,20 @@ body{font-family:var(--ui);font-weight:500;color:var(--ink);-webkit-user-select:
 .txt{position:absolute;left:0;right:0;text-align:center;pointer-events:none}
 /* 題名 = 店の看板: 赤い板に 白の手描き文字。板の内側に 白の線 1 本 */
 #title{top:calc(var(--u)*120 + env(safe-area-inset-top));transition:opacity 200ms var(--ease-out),transform 200ms var(--ease-out)}
-.sign{position:relative;display:inline-block;padding:calc(var(--u)*46) calc(var(--u)*70) calc(var(--u)*56);border-radius:calc(var(--u)*10);background:var(--red);
-  box-shadow:inset 0 0 0 calc(var(--u)*14) var(--red),inset 0 0 0 calc(var(--u)*19) #fff,0 calc(var(--u)*14) calc(var(--u)*26) rgba(20,4,0,.45)}
-#title h1{margin:0;font-family:var(--sign);font-weight:400;font-size:calc(var(--u)*184);line-height:1.08;letter-spacing:.02em;color:#fff}
-#title h1 .to{font-size:.66em}
-#title.en h1{font-size:calc(var(--u)*138);line-height:1.08;letter-spacing:0}
+.sign{position:relative;display:table;margin:0 auto;line-height:0}
+/* 題名 = 香港の 金漆招牌(黒漆の板に 金箔の 筆の字)。絵 = assets/sign.webp(Grok で 下書きの看板を描き直したもの)。板を 店の壁に掛ける影だけ足す */
+#title h1{margin:0;font-size:0;line-height:0}
+#title h1 img{display:block;width:calc(var(--u)*820);height:auto;border-radius:calc(var(--u)*3);transform:rotate(-0.8deg);box-shadow:0 calc(var(--u)*3) calc(var(--u)*3) rgba(0,0,0,.55),calc(var(--u)*6) calc(var(--u)*12) calc(var(--u)*14) rgba(0,0,0,.3)}   /* 壁の梁と同じ 少し右上がり。影は 壁に接した 細い影 + 右下へ 短く(Codex) */
+#title .en-name{display:none;margin-top:calc(var(--u)*12);font-weight:900;font-size:calc(var(--u)*64);letter-spacing:.02em;color:#fff;text-shadow:0 calc(var(--u)*3) calc(var(--u)*8) rgba(20,4,0,.9)}
+#title.en .en-name{display:block}
+#title.en #rank{margin-top:calc(var(--u)*36)}
 /* 肩書きの札(押すと 工具掛け) */
-#rank{pointer-events:auto;display:inline-flex;align-items:baseline;gap:calc(var(--u)*18);margin-top:calc(var(--u)*36);height:auto;padding:calc(var(--u)*18) calc(var(--u)*40) calc(var(--u)*20);
+#rank{pointer-events:auto;display:inline-flex;align-items:baseline;gap:calc(var(--u)*18);margin-top:calc(var(--u)*58);height:auto;padding:calc(var(--u)*18) calc(var(--u)*40) calc(var(--u)*20);
   background:var(--paper);border-radius:calc(var(--u)*6);box-shadow:inset 0 0 0 calc(var(--u)*3) var(--red),0 calc(var(--u)*8) calc(var(--u)*18) rgba(20,4,0,.4)}
 #rank .lv{font-weight:700;font-size:calc(var(--u)*34);color:var(--red);letter-spacing:.04em}
 #rank .nm{font-weight:900;font-size:calc(var(--u)*58);letter-spacing:.08em}
 #rank .go{font-weight:700;font-size:calc(var(--u)*30);opacity:.6}
-#title p{margin:calc(var(--u)*26) auto 0;max-width:calc(var(--u)*900);font-weight:700;font-size:calc(var(--u)*40);line-height:1.45;color:#fff;text-shadow:0 calc(var(--u)*2) calc(var(--u)*6) rgba(20,4,0,.85)}
+#title p{margin:calc(var(--u)*12) auto 0;max-width:calc(var(--u)*900);font-weight:700;font-size:calc(var(--u)*40);line-height:1.45;color:#fff;text-shadow:0 calc(var(--u)*2) calc(var(--u)*6) rgba(20,4,0,.85)}
 #title.off{opacity:0;transform:translateY(calc(var(--u)*-14));pointer-events:none}
 #title.off #rank{pointer-events:none}
 #start{position:absolute;left:0;right:0;bottom:calc(var(--u)*110 + env(safe-area-inset-bottom) + var(--gz-ad,0px));display:flex;flex-direction:column;align-items:center;gap:calc(var(--u)*26);transition:opacity 200ms var(--ease-out)}
@@ -157,7 +159,7 @@ html[lang=en] .panel h2{letter-spacing:.04em}
 <body>
 <div id="stage">
   <canvas id="bg"></canvas><canvas id="fx"></canvas>
-  <div id="title" class="txt"><div class="sign"><h1></h1></div><br><button id="rank" type="button"><span class="lv"></span><span class="nm"></span><span class="go"></span></button><p></p></div>
+  <div id="title" class="txt"><div class="sign"><h1><img src="assets/sign.webp" alt="餃子とドリル" width="960" height="720"></h1></div><div class="en-name">Dumplings &amp; Drill</div><button id="rank" type="button"><span class="lv"></span><span class="nm"></span><span class="go"></span></button><p></p></div>
   <div id="boss" class="txt"><span><b></b><i></i></span></div>
   <div id="hint" class="txt"><span></span></div>
   <div id="start"><button id="b-in" class="main"></button><div class="subs"><button id="b-board" class="sub"></button><button id="b-set" class="sub"></button></div></div>

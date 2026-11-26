@@ -955,7 +955,7 @@
   function kitchenPlate() { var s = bgS(); return { x: bgX() + 600 * s, y: 1310 * s, rx: 300 * s, ry: 226 * s }; }   // 厨房の写真の 大皿(目で測った値)
   function stapleStart(sd) { return { kind: 'staple', g: new GT.Staple(sd), arm: new Spring(900, 30, 0), staples: {}, fly: [], plate: [], off: [], endAt: 0 }; }
   function stapleY() { return Math.round(H * 0.83); }
-  var MX = 380;                                        // ホッチキスの口の x
+  var MX = 330;                                        // ホッチキスの口の x
   function markX(m, t) { return MX + (t - m.at) * RV; }
   function rollSpan(r, t) { var xs = r.marks.map(function (m) { return markX(m, t); }); return { a: Math.min.apply(null, xs) - 118, b: Math.max.apply(null, xs) + 118 }; }
   function drawRoll(c, r, a, b, y, R, t, st0) {        // 春巻 1 本(横に寝た筒)。a・b = 左右の端、y = 中心
@@ -985,23 +985,19 @@
       c.fillStyle = '#7f9c4e'; c.beginPath(); c.ellipse(a - 4, y + 10, 18, 13, 0.5, 0, 7); c.fill();
     }
   }
-  function drawStaplerBase(c, y, R) {                 // 台(奥へ のびる 鉄の板。春巻は この上を 流れる = 春巻より先に描く)
-    c.fillStyle = lg(c, 0, y - R - 300, 0, y + R + 20, [[0, '#7d848b'], [1, '#c9ced3']]); c.fill(polyP([MX - 70, y - R - 300, MX + 70, y - R - 300, MX + 120, y + R + 22, MX - 120, y + R + 22]));
-    c.fillStyle = '#3a3d41'; c.fillRect(MX - 26, y + R - 2, 52, 10);                                              // 金床(針を 曲げる くぼみ)
+  // 大きいホッチキスを 自分の右手で 押さえている写真(hand_stapler。760 幅。腕は 奥へ、口は 手前)。口の下の辺 = 絵の (160, 800)
+  var HSP = { k: 0.95, ox: 160, oy: 800, cut: 272 };       // cut = これより右は 手首・腕(春巻の 上に重ねる)
+  function staplerAt(y, R, down) { return { x: MX - HSP.ox * HSP.k, y: y - R - HSP.oy * HSP.k + 6 + down * 16 }; }
+  function armExt(c, im, p, w, h) { c.save(); c.translate(p.x, p.y + h - 2); c.transform(1, 0, 0.32, 1, 0, 0); c.drawImage(im, 0, im.height - 3, im.width, 3, 0, 0, w, 900); c.restore(); }   // 腕の向き(右下)へ 斜めに のばす
+  function drawStaplerBase(c, y, R, down) {            // 先に 全部を描く(台の前の辺は このあと 春巻に隠れる)
+    var p = staplerAt(y, R, down), im = img.hand_stapler, w = im.width * HSP.k, h = im.height * HSP.k;
+    c.save(); c.shadowColor = 'rgba(20,8,2,.45)'; c.shadowBlur = 30; c.shadowOffsetY = 18; c.drawImage(im, p.x, p.y, w, h); c.restore();
+    armExt(c, im, p, w, h);      // 腕は 絵の下の辺で切れているので 画面の外まで のばす
   }
-  function drawStapler(c, y, R, down) {               // 大きい ホッチキスを 手前から見る(腕は 奥へ のびて、頭の顔が こちらを向く)。down = 0〜1 押した量
-    var hy = y - R - 10 + down * 34, bw = 200;           // hy = 頭の下の辺
-    // 腕(赤い琺瑯。奥ほど 細く・高く)
-    var arm = polyP([MX - bw / 2 - 6, hy - 104, MX - 60, y - R - 330, MX + 60, y - R - 330, MX + bw / 2 + 6, hy - 104]);
-    c.save(); c.shadowColor = 'rgba(20,8,2,.45)'; c.shadowBlur = 26; c.shadowOffsetY = 16; c.fillStyle = lg(c, MX - 80, 0, MX + 80, 0, [[0, '#6a110b'], [0.3, '#c32a1f'], [0.55, '#e0473a'], [1, '#7c140d']]); c.fill(arm); c.restore();
-    c.fillStyle = 'rgba(255,255,255,.28)'; c.fill(polyP([MX - 30, hy - 110, MX - 14, y - R - 322, MX - 4, y - R - 322, MX - 8, hy - 110]));
-    c.fillStyle = lg(c, 0, y - R - 360, 0, y - R - 310, BLACK); c.fill(rrP(MX - 66, y - R - 360, 132, 46, 18));      // 奥の 蝶番
-    // 頭(こちらを向いた 顔。赤い丸い 打ち面 + 鉄の口)
-    c.save(); c.shadowColor = 'rgba(20,8,2,.5)'; c.shadowBlur = 20; c.shadowOffsetY = 14;
-    c.fillStyle = lg(c, 0, hy - 130, 0, hy, [[0, '#e4503f'], [0.45, '#b72519'], [1, '#6e120c']]); c.fill(rrP(MX - bw / 2 - 10, hy - 130, bw + 20, 104, 34)); c.restore();
-    c.fillStyle = 'rgba(255,255,255,.3)'; c.fill(rrP(MX - bw / 2 + 10, hy - 122, bw - 20, 16, 8));
-    c.fillStyle = lg(c, 0, hy - 40, 0, hy, STEEL); c.fill(rrP(MX - bw / 2 + 6, hy - 42, bw - 12, 42, 8));               // 口の鉄板
-    c.fillStyle = '#26282b'; c.fillRect(MX - 28, hy - 8, 56, 8);                                                          // 針の出口
+  function drawStapler(c, y, R, down) {               // 春巻の上に もう一度: 口より上 と 手首から右(腕は 春巻より 上にある)
+    var p = staplerAt(y, R, down), im = img.hand_stapler, k = HSP.k, w = im.width * k, h = im.height * k;
+    c.save(); c.beginPath(); c.rect(p.x - 10, p.y - 10, w + 20, HSP.oy * k + 10); c.rect(p.x + HSP.cut * k, p.y, w, H); c.clip();
+    c.drawImage(im, p.x, p.y, w, h); armExt(c, im, p, w, h); c.restore();
   }
   function stapleFrame(tn, dt) {
     var M = mini, g = M.g, t = tn - T0 - (fake != null ? 0 : 24), y = stapleY(), c = fx, i;
@@ -1010,7 +1006,7 @@
     // 皿(写真の大皿)の上の 留まった春巻
     for (i = 0; i < M.plate.length; i++) { var p = M.plate[i]; c.save(); c.translate(p.x, p.y); c.rotate(p.rot); c.scale(0.5, 0.5); drawRoll(c, p.r, -p.len / 2, p.len / 2, 0, p.R, 0, p.st); c.restore(); }
     // 台の上を 流れる春巻
-    drawStaplerBase(c, y, 78);
+    drawStaplerBase(c, y, 78, clamp(down, 0, 1.3));
     for (i = 0; i < g.rolls.length; i++) {
       var r = g.rolls[i], R = r.thick ? 92 : 78; if (r.gone && r.result === 'closed') continue;
       var sp = rollSpan(r, t); if (sp.a > W + 40) continue; drawRoll(c, r, sp.a, sp.b, y, R, t);
@@ -1034,7 +1030,7 @@
     else if (e.type === 'leave' && e.roll.result === 'closed') {
       var r = e.roll, s = rollSpan(r, e.t), n = M.plate.length + M.fly.length, P = kitchenPlate(), col = n % 3, row = Math.floor(n / 3) % 3, R = r.thick ? 92 : 78;
       var st0 = r.marks.map(function (m) { return markX(m, e.t) - (s.a + s.b) / 2; });
-      M.fly.push({ r: r, t0: now(), x0: (s.a + s.b) / 2, y0: y, x1: P.x + (col - 1) * P.rx * 0.5 + row * 18, y1: P.y - P.ry * 0.35 + row * P.ry * 0.32, rot: (col - 1) * 0.08 - 0.12, len: s.b - s.a, R: R, st: st0 }); play('slide');
+      M.fly.push({ r: r, t0: now(), x0: (s.a + s.b) / 2, y0: y, x1: P.x + P.rx * (0.05 + col * 0.24) + row * 14, y1: P.y - P.ry * (0.62 - row * 0.2), rot: -0.5 + col * 0.06, len: s.b - s.a, R: R, st: st0 }); play('slide');
     } else if (e.type === 'stage') { play('boss'); say(T('常連「端まで 具を 入れて！ 太巻きで」', 'Regular: "Fill them to the ends! Fat ones!"'), 2400); bgmLayer(1); }
     else if (e.type === 'timeup') play('whistle');
     else if (e.type === 'end') finishMini(e.kind);
@@ -1060,6 +1056,12 @@
     c.fillStyle = 'rgba(30,34,38,.85)'; c.font = '700 15px ' + FONT_UI; c.textAlign = 'center'; c.textBaseline = 'middle';
     for (var n = 100; n <= L; n += 100) c.fillText(String(n / 10), n, side * 30);
     c.restore();
+  }
+  // カッターを ペンのように持つ 自分の右手(hand_cutter。700 幅。刃先 = 絵の (1, 20))。向きは 変えず、刃先を 指の所へ
+  function drawCutHand(c, x, y) {
+    var im = img.hand_cutter, k = 1.05, w = im.width * k, h = im.height * k, ox = x - 1 * k, oy = y - 20 * k;
+    c.save(); c.shadowColor = 'rgba(20,8,2,.4)'; c.shadowBlur = 24; c.shadowOffsetX = 10; c.shadowOffsetY = 22; c.drawImage(im, ox, oy, w, h); c.restore();
+    c.drawImage(im, im.width - 3, 0, 3, im.height, ox + w - 2, oy, 900, h);          // 腕は 絵の右の辺で切れているので 画面の外まで
   }
   function drawCutter(c, x, y, ang, k) {               // カッター(黄色の柄 + 折れる刃)。(x, y) = 刃先
     c.save(); c.translate(x, y); c.rotate(ang); c.scale(k, k);
@@ -1095,9 +1097,9 @@
     if (s && M.last) {
       var dx = s.to.x - s.from.x, dy = s.to.y - s.from.y, LL = Math.hypot(dx, dy), u = clamp(((M.last.x - s.from.x) * dx + (M.last.y - s.from.y) * dy) / (LL * LL), 0, 1);
       c.strokeStyle = s.dev > g.cfg.devOk ? 'rgba(200,36,27,.9)' : 'rgba(80,56,24,.85)'; c.lineWidth = 3; c.beginPath(); s.pts.forEach(function (p, j) { if (j) c.lineTo(p.x, p.y); else c.moveTo(p.x, p.y); }); c.stroke();
-      drawCutter(c, M.last.x, M.last.y, Math.atan2(dy, dx) + Math.PI, 0.9);
+      drawCutHand(c, M.last.x, M.last.y);
       M.spd = M.spd * 0.7 + 0.3 * (M.lastV || 0); cutSound(M.spd);
-    } else { cutSound(0); if (sIn >= 1 && st === 'MINI') drawCutter(c, L.a.x - 6, L.a.y + 40, la + Math.PI + 0.25, 0.8); }
+    } else { cutSound(0); if (sIn >= 1) drawCutHand(c, L.a.x - 4, L.a.y + 6); }
     // 皿へ飛ぶ 細切り / 捨てる 切れ端
     for (i = M.fly.length - 1; i >= 0; i--) { var f = M.fly[i], a = clamp((tn - f.t0) / 560, 0, 1), e = ease(a);
       var x = lerp(f.x0, f.x1, e), y = lerp(f.y0, f.y1, e) - Math.sin(a * Math.PI) * 180;
@@ -1136,12 +1138,12 @@
   // ---- 起動 ----
   function loop() { frame(now()); requestAnimationFrame(loop); }
   window.addEventListener('resize', layout);
-  Promise.all(['shop', 'shop_pot', 'kitchen', 'dumpling', 'dumpling_open', 'hand', 'hand_thin', 'hand_torn', 'head', 'drill', 'screw', 'drill_side'].map(function (n) { return load(n, 'assets/' + n + '.webp'); }).concat(document.fonts ? [
+  Promise.all(['shop', 'shop_pot', 'kitchen', 'dumpling', 'dumpling_open', 'hand', 'hand_thin', 'hand_torn', 'head', 'drill', 'screw', 'drill_side', 'hand_stapler', 'hand_cutter'].map(function (n) { return load(n, 'assets/' + n + '.webp'); }).concat(document.fonts ? [
       document.fonts.load('40px "Potta"', '餃子とドリルぴたっDumplings&Drill').catch(function () {}), document.fonts.load('40px "YujiSyuku"', '餃子麻婆豆腐').catch(function () {}),
       Promise.all(['500', '700', '900'].map(function (w) { return document.fonts.load(w + ' 40px "ZenKaku"', '餃子0123Aa'); })).catch(function () {})] : [])).then(function () {
     ['hand', 'hand_thin', 'hand_torn'].forEach(function (n) { spr[n] = bake(img[n], HS, 34, 30); }); spr.drill = bake(img.drill, DRL_F.ds, 30, 34); spr.drill_side = bake(img.drill_side, DRL_S.ds, 30, 34);
     ready = true; layout(); lastT = now();
-    titleEl.querySelector('h1').innerHTML = T('餃子<span class="to">と</span><br>ドリル', 'Dumplings<br>&amp; Drill');   // 題字 = Potta One(町中華の手描き看板)
+    titleEl.querySelector('h1 img').alt = T('餃子とドリル', 'Dumplings & Drill');   // 題字 = 看板の絵(香港の金漆招牌。英語でも 看板は日本語のまま、下に 英語の名前)
     if (!JA) titleEl.classList.add('en');
     buildSettings(); toTitle(); requestAnimationFrame(loop);
     if (Q.get('stage')) S = +Q.get('stage') - 1;          // 検査用: ?stage=N で その面の伝票から
