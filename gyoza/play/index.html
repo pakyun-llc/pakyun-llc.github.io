@@ -8,15 +8,18 @@
 <link rel="icon" href="data:,">
 <title>餃子とドリル</title>
 <style>
-@font-face{font-family:"YujiBoku";src:url("fonts/YujiBoku.subset.woff") format("woff");font-weight:400;font-display:block}
-@font-face{font-family:"GZNum";src:url("fonts/ShipporiNum.subset.woff") format("woff");font-weight:400;font-display:block}
+/* 字は 2 つ(SIL OFL 1.1): 看板屋の字 = Chiron Sung HK(香港の宋体)/ 大将の手書き = Yuji Syuku(楷書の筆。数字は抜いてあるので Chiron の数字が出る) */
+@font-face{font-family:"ChironSung";src:url("fonts/ChironSungHK-500.subset.woff") format("woff");font-weight:400 500;font-display:block}
+@font-face{font-family:"ChironSung";src:url("fonts/ChironSungHK-700.subset.woff") format("woff");font-weight:600 700;font-display:block}
+@font-face{font-family:"ChironSung";src:url("fonts/ChironSungHK-900.subset.woff") format("woff");font-weight:800 900;font-display:block}
+@font-face{font-family:"YujiSyuku";src:url("fonts/YujiSyuku.subset.woff") format("woff");font-weight:400;font-display:block}
 /* 町中華の色: 墨・品書きの紙・朱の漆・金(看板の字と 雷文)・こげ茶(木) */
-:root{--ink:#241a12;--paper:#f6ead0;--red:#b5281c;--lacq:#8e1a10;--gold:#d6a84a;--wood:#2c160e;--ease-out:cubic-bezier(.23,1,.32,1);--u:1px;
+:root{--ink:#30251d;--paper:#efe2c4;--shu:#a33728;--sung:"ChironSung","Hiragino Mincho ProN","Yu Mincho",serif;--brush:"YujiSyuku","ChironSung","Hiragino Mincho ProN",serif;--red:#b5281c;--lacq:#8e1a10;--gold:#d6a84a;--wood:#2c160e;--ease-out:cubic-bezier(.23,1,.32,1);--u:1px;
   /* 雷文(四角い うず)の帯。看板と 設定の札の 上下に使う */
   --meander:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M0 21H21V3H5V17H17V7H9V13H13' fill='none' stroke='%23d6a84a' stroke-width='2.4' stroke-linecap='square'/%3E%3C/svg%3E")}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;background:#1a0c07;overflow:hidden;overscroll-behavior:none}
-body{font-family:"YujiBoku","GZNum","Hiragino Mincho ProN","Yu Mincho",serif;font-weight:400;color:var(--ink);
+body{font-family:var(--brush);font-weight:400;color:var(--ink);
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none}
 #stage{position:absolute;left:50%;top:0;transform:translateX(-50%);overflow:hidden;background:#8e1a10}
 #stage canvas{position:absolute;left:0;top:0;width:100%;height:100%;display:block}
@@ -29,13 +32,16 @@ body{font-family:"YujiBoku","GZNum","Hiragino Mincho ProN","Yu Mincho",serif;fon
 .sign{position:relative;display:inline-block;padding:calc(var(--u)*58) calc(var(--u)*74) calc(var(--u)*54);border-radius:calc(var(--u)*8);text-shadow:none;
   background:radial-gradient(120% 90% at 30% 20%,#c9361f 0%,#a2231a 55%,#7a140c 100%);
   box-shadow:inset 0 0 0 calc(var(--u)*7) var(--wood),inset 0 0 0 calc(var(--u)*10) var(--gold),inset 0 0 0 calc(var(--u)*13) #6e1009,0 calc(var(--u)*18) calc(var(--u)*40) rgba(20,4,0,.55)}
-.sign::before,.sign::after,.panel h2::before,.panel h2::after{content:"";position:absolute;left:calc(var(--u)*22);right:calc(var(--u)*22);height:calc(var(--u)*24);
+.sign::before,.sign::after{content:"";position:absolute;left:calc(var(--u)*22);right:calc(var(--u)*22);height:calc(var(--u)*24);
   background:var(--meander) repeat-x center/calc(var(--u)*24) calc(var(--u)*24);opacity:.85}
 .sign::before{top:calc(var(--u)*20)}.sign::after{bottom:calc(var(--u)*20)}
-#title h1{margin:0;font-weight:400;font-size:calc(var(--u)*150);line-height:1.1;letter-spacing:.04em;color:#f7d98e;
-  text-shadow:0 calc(var(--u)*4) 0 #4e0b05,0 0 calc(var(--u)*18) rgba(255,190,90,.35)}
-#title.en h1{font-size:calc(var(--u)*112)}
-#title p{margin:calc(var(--u)*34) 0 0;font-size:calc(var(--u)*44);letter-spacing:.04em}
+/* 金文字は 朱漆に薄く盛った金: 平金に ゆるい縦の勾配、下に 暗い赤茶を 1 px(全周の縁取り・白い光は入れない = 食偏の隙間を潰さない) */
+#title h1{margin:0;font-family:var(--sung);font-weight:900;font-size:calc(var(--u)*158);line-height:1.08;letter-spacing:0;
+  color:#ebcb83;background:linear-gradient(#f3d99a,#ddb76e);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 calc(var(--u)*3) 0 #66321e)}
+#title h1 .to{font-size:.78em}
+#title.en h1{font-size:calc(var(--u)*104);line-height:1.12;letter-spacing:.02em}
+#title p{margin:calc(var(--u)*34) 0 0;font-size:calc(var(--u)*46);letter-spacing:.04em;line-height:1.35}
 #title.off{opacity:0;transform:translateY(calc(var(--u)*-14))}
 #start{position:absolute;left:0;right:0;bottom:calc(var(--u)*120 + env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center;gap:calc(var(--u)*30);transition:opacity 200ms var(--ease-out)}
 #start.off{opacity:0;pointer-events:none}
@@ -43,62 +49,64 @@ body{font-family:"YujiBoku","GZNum","Hiragino Mincho ProN","Yu Mincho",serif;fon
 /* 大将の声 = 品書きの前に出る 漆の札(壁の字と 重なっても 読める) */
 #boss{top:calc(var(--u)*176 + env(safe-area-inset-top));padding:0 calc(var(--u)*40);opacity:0;transform:translateY(calc(var(--u)*-10));text-shadow:none;
   transition:opacity 160ms var(--ease-out),transform 160ms var(--ease-out)}
-#boss span{display:inline-block;max-width:100%;font-size:calc(var(--u)*50);line-height:1.3;text-wrap:balance;color:var(--paper);padding:calc(var(--u)*22) calc(var(--u)*40);border-radius:calc(var(--u)*10);
-  background:rgba(40,18,10,.9);box-shadow:inset 0 0 0 calc(var(--u)*3) var(--gold),0 calc(var(--u)*10) calc(var(--u)*26) rgba(20,4,0,.45)}
+#boss span{display:inline-block;max-width:100%;font-size:calc(var(--u)*54);line-height:1.3;text-wrap:balance;color:var(--ink);padding:calc(var(--u)*22) calc(var(--u)*44);border-radius:calc(var(--u)*4);
+  background:linear-gradient(#f5ead2,#eadbb9);box-shadow:inset 0 0 0 calc(var(--u)*2) rgba(48,37,29,.28),0 calc(var(--u)*10) calc(var(--u)*24) rgba(20,4,0,.45)}
 #boss.on{opacity:1;transform:none;transition-duration:220ms}
-#hint{bottom:calc(var(--u)*120 + env(safe-area-inset-bottom));font-size:calc(var(--u)*44);text-wrap:balance;letter-spacing:.04em;padding:0 calc(var(--u)*60);opacity:0;transition:opacity 200ms var(--ease-out)}
+#hint{font-family:var(--brush);bottom:calc(var(--u)*120 + env(safe-area-inset-bottom));font-size:calc(var(--u)*44);text-wrap:balance;letter-spacing:.04em;padding:0 calc(var(--u)*60);opacity:0;transition:opacity 200ms var(--ease-out)}
 #hint.on{opacity:1}
 /* 結果 = 品書きの札 */
 #result{bottom:calc(var(--u)*56 + env(safe-area-inset-bottom));opacity:0;visibility:hidden;text-shadow:none}
 #result.on{visibility:visible;opacity:1}
-.board{position:relative;margin:0 auto;width:calc(var(--u)*860);padding:0 calc(var(--u)*40) calc(var(--u)*34);border-radius:calc(var(--u)*6);
-  background:linear-gradient(#f8eed6,#efdfbb);box-shadow:inset 0 0 0 calc(var(--u)*6) var(--lacq),inset 0 0 0 calc(var(--u)*9) var(--gold),0 calc(var(--u)*18) calc(var(--u)*44) rgba(20,4,0,.6)}
+/* 品書きの札: 生成りの紙に 朱罫 1 本だけ */
+.board{position:relative;margin:0 auto;width:calc(var(--u)*860);padding:calc(var(--u)*30) calc(var(--u)*44) calc(var(--u)*34);border-radius:calc(var(--u)*4);
+  background:linear-gradient(#f5ead2,#eadbb9);box-shadow:inset 0 0 0 calc(var(--u)*14) #f1e4c6,inset 0 0 0 calc(var(--u)*16) var(--shu),0 calc(var(--u)*18) calc(var(--u)*44) rgba(20,4,0,.6)}
 #result .board>*,#r-btns{opacity:0;transform:translateY(calc(var(--u)*16));transition:opacity 260ms var(--ease-out),transform 260ms var(--ease-out)}
 #result.on .board>*,#result.on #r-btns{opacity:1;transform:none}
 #result.on .board>*:nth-child(2){transition-delay:40ms}#result.on .board>*:nth-child(3){transition-delay:80ms}#result.on .board>*:nth-child(4){transition-delay:110ms}
 #result.on .board>*:nth-child(5){transition-delay:140ms}#result.on .board>*:nth-child(6){transition-delay:170ms}#result.on .board>*:nth-child(7){transition-delay:200ms}#result.on #r-btns{transition-delay:230ms}
-#r-head{margin:0 calc(var(--u)*-40);padding:calc(var(--u)*20) 0 calc(var(--u)*16);font-size:calc(var(--u)*40);letter-spacing:.3em;color:#f7d98e;border-radius:calc(var(--u)*6) calc(var(--u)*6) 0 0;
-  background:linear-gradient(#a8251a,#861910);box-shadow:inset 0 0 0 calc(var(--u)*6) var(--lacq),inset 0 calc(var(--u)*-3) 0 var(--gold)}
-#r-dish{font-size:calc(var(--u)*84);margin-top:calc(var(--u)*22);letter-spacing:.06em}
-html[lang=en] #r-dish{font-size:calc(var(--u)*66)}
-.lat{font-family:"Hiragino Mincho ProN","Yu Mincho",serif;font-weight:700}
-#r-label{font-size:calc(var(--u)*40);letter-spacing:.06em;margin-top:calc(var(--u)*4)}
-#r-big{font-size:calc(var(--u)*190);line-height:1.04;font-variant-numeric:tabular-nums;color:var(--red)}
-#r-big small{font-size:.4em;margin-left:.08em;color:var(--ink)}
-#r-big.word{font-size:calc(var(--u)*130);line-height:1.2}
-#r-rank{font-size:calc(var(--u)*66);color:var(--red)}
+#r-head{font-family:var(--sung);font-weight:700;font-size:calc(var(--u)*40);letter-spacing:.32em;color:var(--shu);padding-left:.32em}
+html[lang=en] #r-head{letter-spacing:.04em;padding-left:0}
+#r-dish{font-size:calc(var(--u)*92);margin-top:calc(var(--u)*10);letter-spacing:.06em;line-height:1.15}
+html[lang=en] #r-dish{font-family:var(--sung);font-weight:700;font-size:calc(var(--u)*68)}
+.lat{font-family:var(--sung);font-weight:700}
+#r-label{font-family:var(--sung);font-weight:500;font-size:calc(var(--u)*38);letter-spacing:.06em;margin-top:calc(var(--u)*4)}
+#r-big{font-family:var(--sung);font-weight:900;font-size:calc(var(--u)*190);line-height:1.02;font-variant-numeric:tabular-nums;color:var(--shu)}
+#r-big small{font-family:var(--brush);font-weight:400;font-size:.32em;margin-left:.1em;color:var(--ink)}
+#r-big.word{font-family:var(--brush);font-weight:400;font-size:calc(var(--u)*130);line-height:1.2}
+#r-rank{font-family:var(--sung);font-weight:900;font-size:calc(var(--u)*64);letter-spacing:.08em;color:var(--shu)}
 #r-rank.bad{color:var(--ink)}
 #r-rank:empty{display:none}
 #r-line{font-size:calc(var(--u)*44);margin-top:calc(var(--u)*10)}
-#r-stat{font-size:calc(var(--u)*34);margin-top:calc(var(--u)*12);opacity:.85}
+#r-stat{font-family:var(--sung);font-weight:500;font-size:calc(var(--u)*32);margin-top:calc(var(--u)*16);opacity:.85;word-spacing:.1em}
+#r-stat span{white-space:nowrap;margin:0 .55em}
 #r-stat:empty{display:none}
 #r-btns{margin-top:calc(var(--u)*30);display:flex;justify-content:center;gap:calc(var(--u)*22);pointer-events:auto}
 /* ボタン: 押す物 = 朱の漆に 金の縁 / ほか = 品書きの紙に 朱の縁 */
-button{font:inherit;color:var(--ink);background:var(--paper);border:0;border-radius:calc(var(--u)*12);height:calc(var(--u)*116);padding:0 calc(var(--u)*56);
-  font-size:calc(var(--u)*48);box-shadow:inset 0 0 0 calc(var(--u)*4) var(--red),0 calc(var(--u)*8) calc(var(--u)*22) rgba(20,4,0,.4);
+button{font:inherit;font-family:var(--sung);font-weight:700;letter-spacing:.06em;color:var(--ink);background:var(--paper);border:0;border-radius:calc(var(--u)*8);height:calc(var(--u)*116);padding:0 calc(var(--u)*56);
+  font-size:calc(var(--u)*46);box-shadow:inset 0 0 0 calc(var(--u)*3) var(--shu),0 calc(var(--u)*8) calc(var(--u)*22) rgba(20,4,0,.4);
   transition:transform 140ms var(--ease-out);touch-action:manipulation;cursor:pointer;pointer-events:auto;text-shadow:none}
 button:active{transform:scale(.97)}
-button.main{background:linear-gradient(#c8321f,#99200f);color:#f9dc96;box-shadow:inset 0 0 0 calc(var(--u)*5) var(--lacq),inset 0 0 0 calc(var(--u)*7) var(--gold),0 calc(var(--u)*8) calc(var(--u)*22) rgba(20,4,0,.45)}
+button.main{background:linear-gradient(#b8301f,#922012);color:#f5e6c4;box-shadow:inset 0 calc(var(--u)*2) 0 rgba(255,220,180,.18),0 calc(var(--u)*8) calc(var(--u)*22) rgba(20,4,0,.45)}
 button.sub{height:calc(var(--u)*92);font-size:calc(var(--u)*40);padding:0 calc(var(--u)*44)}
 button:focus-visible{outline:calc(var(--u)*6) solid var(--gold);outline-offset:calc(var(--u)*6)}
 /* 設定(品書きの札と同じ作り。開くと 店が少し暗くなる) */
 #set{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(20,6,2,.55);opacity:0;visibility:hidden;
   transition:opacity 200ms var(--ease-out),visibility 0s linear 200ms;touch-action:manipulation}
 #set.on{opacity:1;visibility:visible;transition:opacity 220ms var(--ease-out)}
-.panel{position:relative;width:calc(var(--u)*940);max-height:94%;overflow:auto;border-radius:calc(var(--u)*8);padding:0 calc(var(--u)*46) calc(var(--u)*44);
-  background:linear-gradient(#f8eed6,#efdfbb);box-shadow:inset 0 0 0 calc(var(--u)*6) var(--lacq),inset 0 0 0 calc(var(--u)*9) var(--gold),0 calc(var(--u)*24) calc(var(--u)*60) rgba(0,0,0,.6);
+.panel{position:relative;width:calc(var(--u)*940);max-height:94%;overflow:auto;border-radius:calc(var(--u)*4);padding:calc(var(--u)*20) calc(var(--u)*50) calc(var(--u)*44);
+  background:linear-gradient(#f5ead2,#eadbb9);box-shadow:inset 0 0 0 calc(var(--u)*14) #f1e4c6,inset 0 0 0 calc(var(--u)*16) var(--shu),0 calc(var(--u)*24) calc(var(--u)*60) rgba(0,0,0,.6);
   transform:scale(.96) translateY(calc(var(--u)*12));transition:transform 200ms var(--ease-out)}
 #set.on .panel{transform:none;transition-duration:240ms}
-.panel h2{position:relative;margin:0 calc(var(--u)*-46) calc(var(--u)*16);padding:calc(var(--u)*50) 0 calc(var(--u)*48);font-weight:400;font-size:calc(var(--u)*64);letter-spacing:.3em;text-align:center;color:#f7d98e;
-  border-radius:calc(var(--u)*8) calc(var(--u)*8) 0 0;background:linear-gradient(#a8251a,#861910);box-shadow:inset 0 0 0 calc(var(--u)*6) var(--lacq),inset 0 calc(var(--u)*-3) 0 var(--gold)}
-.panel h2::before{top:calc(var(--u)*14)}.panel h2::after{bottom:calc(var(--u)*14)}
+.panel h2{margin:calc(var(--u)*24) 0 calc(var(--u)*10);padding:0 0 calc(var(--u)*26) .4em;font-family:var(--sung);font-weight:900;font-size:calc(var(--u)*60);letter-spacing:.4em;text-align:center;color:var(--ink);
+  border-bottom:calc(var(--u)*3) solid var(--shu)}
+html[lang=en] .panel h2{letter-spacing:.06em;padding-left:0}
 .row{display:flex;align-items:center;justify-content:space-between;gap:calc(var(--u)*20);padding:calc(var(--u)*24) 0;border-bottom:calc(var(--u)*2) dashed rgba(36,26,18,.18)}
-.row .lab{font-size:calc(var(--u)*46);letter-spacing:.06em;white-space:nowrap}
-.row .cap{flex-basis:100%;font-size:calc(var(--u)*34);opacity:.75;margin-top:calc(var(--u)*-6)}
+.row .lab{font-family:var(--sung);font-weight:700;font-size:calc(var(--u)*44);letter-spacing:.06em;white-space:nowrap}
+.row .cap{flex-basis:100%;font-family:var(--sung);font-weight:500;font-size:calc(var(--u)*32);opacity:.75;margin-top:calc(var(--u)*-6)}
 .row.wrap{flex-wrap:wrap}
 .seg{display:flex;gap:calc(var(--u)*12)}
-.seg button{white-space:nowrap;height:calc(var(--u)*100);min-width:calc(var(--u)*130);padding:0 calc(var(--u)*26);font-size:calc(var(--u)*42);box-shadow:inset 0 0 0 calc(var(--u)*3) rgba(181,40,28,.6)}
-.seg button[aria-pressed="true"]{background:linear-gradient(#c8321f,#99200f);color:#f9dc96;box-shadow:inset 0 0 0 calc(var(--u)*4) var(--lacq),inset 0 0 0 calc(var(--u)*6) var(--gold)}
+.seg button{white-space:nowrap;height:calc(var(--u)*100);min-width:calc(var(--u)*130);padding:0 calc(var(--u)*26);font-size:calc(var(--u)*40);font-weight:500;box-shadow:inset 0 0 0 calc(var(--u)*2) rgba(163,55,40,.55)}
+.seg button[aria-pressed="true"]{background:var(--shu);color:#f5e6c4;font-weight:700;box-shadow:none}
 #s-close{display:block;margin:calc(var(--u)*36) auto 0;min-width:calc(var(--u)*360)}
 @media (prefers-reduced-motion:reduce){#title,#boss,#result .board>*,#r-btns,.panel,#set{transition-duration:1ms}}
 </style>

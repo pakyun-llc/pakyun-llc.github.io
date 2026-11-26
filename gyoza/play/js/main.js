@@ -24,7 +24,9 @@
   var bg = cBg.getContext('2d'), fx = cFx.getContext('2d');
   var img = {}, ready = false;
   var INK = '#241a12', PAPER = '#fff6e6', RED = '#b5281c', GOLD = '#d6a84a';
-  var FONT = '"YujiBoku","GZNum","Hiragino Mincho ProN","Yu Mincho",serif';
+  // 字(11-26): 筆 = Yuji Syuku(品書き・大将・ぴたっ。数字は入っていないので Chiron へ落ちる)/ 看板・数字・英語 = Chiron Sung HK(香港の宋体)
+  var FONT = '"YujiSyuku","ChironSung","Hiragino Mincho ProN","Yu Mincho",serif';
+  var FONT_SUNG = '"ChironSung","Hiragino Mincho ProN","Yu Mincho",serif';
 
   function layout() {
     var vw = window.innerWidth, vh = window.innerHeight;
@@ -224,8 +226,9 @@
   var FRONT = true, DS = 0.85, DRL = DRL_F;
   function setMode() { FRONT = SET.mode !== 'side'; DRL = FRONT ? DRL_F : DRL_S; DS = DRL.ds; }
   setMode();
-  var BGI = { w: 1188, h: 2112 };
-  var POTW = { cx: 578, cy: 1085, rx: 395, ry: 158 };                          // 鍋の絵の 湯の面
+  var BGI = { w: 1188, h: 2112, cx: 600 };                                    // 店の写真(shop / shop_pot は同じ構図)。cx = 画面の真ん中に来る x
+  var POTW = { cx: 607, cy: 1313, rx: 348, ry: 150 };                          // shop_pot の 湯の面
+  var PLATE = { cx: 618, cy: 1367, rx: 361, ry: 234 };                         // shop の 大皿
   function rnd(seed) { return G.rng(seed); }
   function bake(im, sc, blur, oy) {                 // 影つきで 先に焼いておく(毎コマ影を計算しない)
     var pad = 60, cv = mk(im.width * sc + pad * 2, im.height * sc + pad * 2), c = cv.getContext('2d');
@@ -280,7 +283,7 @@
   // 皿・鍋に置く 小さい餃子(真上から撮った v1 の絵 + ネジの頭)。ゆるいネジは 少し浮かせる
   function snapshot(d) {
     var cv = mk(300, 200), c = cv.getContext('2d'), n = d.screws.length, i; c.translate(150, 185);
-    c.drawImage(img.dumpling, -130, -144, 260, 144);
+    var dh = 260 * img.dumpling.height / img.dumpling.width; c.drawImage(img.dumpling, -130, -dh, 260, dh);   // 手に持つのと同じ形(帯のとじ目)の餃子
     for (i = 0; i < n; i++) { var a = Math.PI * (n === 1 ? 0.5 : lerp(0.8, 0.2, i / (n - 1))), x = 116 * Math.cos(a), y = -128 * Math.sin(a) + 9, up = d.screws[i].grade === 'loose' ? 6 : 0;
       c.fillStyle = 'rgba(70,50,26,.45)'; c.beginPath(); c.arc(x + up * 0.9 + 1, y + up + 2, 10, 0, 7); c.fill();
       c.drawImage(img.head, x - 10 - up * 0.3, y - 10 - up, 20, 20); }
@@ -297,109 +300,46 @@
   var hintEl = $('hint'), titleEl = $('title'), resEl = $('result'), bossEl = $('boss'), startEl = $('start');
   var bossT = 0, hapT = 0, lastT = 0, contactSeen = false, pressedAt = -1e9;
 
-  // ---- 背景 = 開店前の町中華の客席。円卓(朱の漆)+ ガラスの回転台 + 大皿、奥の壁に 品書きの短冊と 提灯 ----
-  // ⚠️いまは コードで描いた仮の絵。生成写真(shop.webp = 店 + 円卓 / shop_pot.webp = 同じ円卓に 大鍋)が来たら drawBg で そちらを使う
-  var MENU = [['餃子', '四五〇'], ['炒飯', '六〇〇'], ['天津飯', '七〇〇'], ['麻婆豆腐', '七五〇'], ['酢豚', '八五〇'], ['ネジ水餃子', '時価']];
-  function plateC() { return { x: 560, y: H * 0.515, rx: 470, ry: 250 }; }
-  function drawShop(c) {
-    var wallB = Math.round(H * 0.33), r = G.rng(7), i, g, k;
-    // 壁(しっくい。煙で 少し黄ばんでいる)
-    g = c.createLinearGradient(0, 0, 0, wallB + 160); g.addColorStop(0, '#d9bf8f'); g.addColorStop(0.6, '#ead6ad'); g.addColorStop(1, '#cfae7a'); c.fillStyle = g; c.fillRect(0, 0, W, wallB + 220);
-    for (i = 0; i < 90; i++) { var bx = r() * W, by = r() * wallB, br = 30 + r() * 120; g = c.createRadialGradient(bx, by, 0, bx, by, br); g.addColorStop(0, 'rgba(120,84,40,' + (0.03 + r() * 0.05) + ')'); g.addColorStop(1, 'rgba(120,84,40,0)'); c.fillStyle = g; c.fillRect(bx - br, by - br, br * 2, br * 2); }
-    // 腰壁(こげ茶の板)
-    g = c.createLinearGradient(0, wallB - 30, 0, wallB + 200); g.addColorStop(0, '#5a3020'); g.addColorStop(1, '#2c160e'); c.fillStyle = g; c.fillRect(0, wallB - 30, W, 260);
-    c.fillStyle = 'rgba(255,220,170,.18)'; c.fillRect(0, wallB - 30, W, 4);
-    for (i = 0; i < 9; i++) { c.fillStyle = 'rgba(0,0,0,.22)'; c.fillRect(i * 128 + 40, wallB - 26, 3, 230); }
-    // 天井の梁
-    g = c.createLinearGradient(0, 0, 0, 96); g.addColorStop(0, '#24140c'); g.addColorStop(1, '#4a2a1a'); c.fillStyle = g; c.fillRect(0, 0, W, 96);
-    c.fillStyle = 'rgba(0,0,0,.25)'; c.fillRect(0, 96, W, 8);
-    // 品書きの短冊(手書きの紙。最後の 1 枚が この店の「ネジ水餃子 時価」)
-    var sw = 110, gap = 26, x0 = (W - (MENU.length * sw + (MENU.length - 1) * gap)) / 2, top = 120, sh = Math.min(470, wallB - top - 60);
-    c.fillStyle = '#3a2418'; c.fillRect(x0 - 30, top - 6, MENU.length * (sw + gap) + 34, 6);
-    for (i = 0; i < MENU.length; i++) {
-      var mx = x0 + i * (sw + gap), last = i === MENU.length - 1, rot = (r() - 0.5) * 0.03;
-      c.save(); c.translate(mx + sw / 2, top); c.rotate(rot);
-      c.fillStyle = 'rgba(60,30,10,.25)'; c.fillRect(-sw / 2 + 6, 8, sw, sh);                                                                    // 影
-      g = c.createLinearGradient(0, 0, 0, sh); g.addColorStop(0, last ? '#f4d86a' : '#f6ecd3'); g.addColorStop(1, last ? '#e8c450' : '#eadbb8'); c.fillStyle = g; c.fillRect(-sw / 2, 0, sw, sh);
-      c.fillStyle = 'rgba(120,80,30,.08)'; for (k = 0; k < 5; k++) c.fillRect(-sw / 2, r() * sh, sw, 2 + r() * 3);                                     // 紙の しみ
-      var nm = MENU[i][0], pr = MENU[i][1], fs = Math.min(70, (sh - 70 - pr.length * 40) / nm.length);
-      c.fillStyle = INK; c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = fs + 'px ' + FONT;
-      for (k = 0; k < nm.length; k++) c.fillText(nm[k], 0, 30 + fs * (k + 0.5));
-      c.fillStyle = '#a3231a'; c.font = '38px ' + FONT;
-      for (k = 0; k < pr.length; k++) c.fillText(pr[k], 0, sh - 26 - (pr.length - 1 - k) * 40);
+  // ---- 背景 = 開店前の町中華の客席(生成写真 shop / 茹でる所は 同じ構図の shop_pot)。壁の短冊は 無地で撮って、字は ここで書く ----
+  // 短冊 13 枚の 上の辺の両端と 下の辺の両端(写真の座標。目で測った値)。最後の黄色 = 「ネジ水餃子」。開店前は白紙、合格した時だけ 書き足す
+  var STRIPS = [[122, 180, 157, 160, 210, 505], [215, 265, 162, 245, 292, 505], [297, 345, 168, 320, 365, 505], [383, 430, 177, 400, 442, 507], [478, 522, 185, 490, 530, 507],
+    [552, 592, 190, 557, 597, 510], [624, 664, 195, 626, 665, 512], [695, 738, 200, 692, 733, 513], [765, 805, 203, 758, 800, 515], [835, 874, 208, 823, 862, 515],
+    [903, 942, 212, 887, 927, 517], [965, 1005, 218, 948, 985, 517], [1032, 1068, 222, 1005, 1040, 520]];
+  var MENU = [['餃子', '四五〇'], ['炒飯', '六〇〇'], ['拉麺', '六五〇'], ['天津飯', '七〇〇'], ['酢豚', '八五〇'], ['麻婆豆腐', '七五〇'], ['回鍋肉', '八〇〇'],
+    ['中華丼', '七五〇'], ['青椒肉絲', '八〇〇'], ['八宝菜', '八五〇'], ['焼売', '四〇〇'], ['春巻', '三五〇'], ['ネジ水餃子', '時価']];
+  var menuHung = false;                                                        // 合格すると 右端の黄色い短冊に「ネジ水餃子 時価」が載る
+  function bgS() { return H / BGI.h; }
+  function bgX() { return 540 - BGI.cx * bgS(); }
+  function plateC() { var s = bgS(); return { x: bgX() + PLATE.cx * s, y: PLATE.cy * s, rx: PLATE.rx * s, ry: PLATE.ry * s }; }
+  function drawMenu(c) {                              // 短冊に 墨で書く(紙に染みるよう multiply)。品名は上から、値段は朱で下に揃える
+    var s = bgS(), ox = bgX(), i, k;
+    c.save(); c.globalCompositeOperation = 'multiply'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    for (i = 0; i < STRIPS.length; i++) {
+      if (i === STRIPS.length - 1 && !menuHung) continue;
+      var q = STRIPS[i], tx = ox + (q[0] + q[1]) / 2 * s, ty = q[2] * s, bx = ox + (q[3] + q[4]) / 2 * s, by = q[5] * s, wdt = (q[1] - q[0]) * s;
+      var len = Math.hypot(bx - tx, by - ty), nm = MENU[i][0], pr = MENU[i][1], fs = Math.min(wdt * 0.86, (len * 0.62) / nm.length), ps = Math.min(wdt * 0.62, fs * 0.72);
+      c.save(); c.translate(tx, ty); c.rotate(-Math.atan2(bx - tx, by - ty)); c.translate((i % 3 - 1) * 0.6, 0);
+      c.fillStyle = 'rgba(48,37,29,.94)'; c.font = fs + 'px ' + FONT;
+      for (k = 0; k < nm.length; k++) c.fillText(nm[k], 0, len * 0.07 + fs * (k + 0.5));
+      c.fillStyle = 'rgba(163,55,40,.92)'; c.font = ps + 'px ' + FONT;
+      for (k = 0; k < pr.length; k++) c.fillText(pr[k], 0, len * 0.95 - ps * (pr.length - k - 0.5));
       c.restore();
     }
-    // 提灯(左右の すみ)
-    [[58, top + 150], [W - 58, top + 150]].forEach(function (p) {
-      g = c.createRadialGradient(p[0], p[1], 20, p[0], p[1], 260); g.addColorStop(0, 'rgba(255,170,90,.35)'); g.addColorStop(1, 'rgba(255,170,90,0)'); c.fillStyle = g; c.fillRect(p[0] - 260, p[1] - 260, 520, 520);
-      c.strokeStyle = '#24140c'; c.lineWidth = 4; c.beginPath(); c.moveTo(p[0], 96); c.lineTo(p[0], p[1] - 110); c.stroke();
-      g = c.createRadialGradient(p[0] - 22, p[1] - 30, 10, p[0], p[1], 112); g.addColorStop(0, '#ff7a4a'); g.addColorStop(0.55, '#d1301e'); g.addColorStop(1, '#7c140b'); c.fillStyle = g;
-      c.beginPath(); c.ellipse(p[0], p[1], 76, 100, 0, 0, 7); c.fill();
-      c.strokeStyle = 'rgba(90,10,4,.45)'; c.lineWidth = 2; for (k = -3; k <= 3; k++) { c.beginPath(); c.ellipse(p[0], p[1] + k * 26, 76 * Math.sqrt(1 - Math.pow(k * 26 / 100, 2)), 6, 0, 0, Math.PI); c.stroke(); }
-      c.fillStyle = '#2a1a10'; c.fillRect(p[0] - 34, p[1] - 108, 68, 16); c.fillRect(p[0] - 34, p[1] + 92, 68, 16);
-      c.fillStyle = GOLD; c.fillRect(p[0] - 34, p[1] - 110, 68, 4); c.fillRect(p[0] - 34, p[1] + 104, 68, 4);
-      c.strokeStyle = GOLD; c.lineWidth = 3; for (k = -2; k <= 2; k++) { c.beginPath(); c.moveTo(p[0] + k * 6, p[1] + 108); c.lineTo(p[0] + k * 7, p[1] + 160); c.stroke(); }
-    });
-    // 円卓(朱の漆。奥の縁が見えている)
-    var tcx = 540, tcy = wallB + 1000, trx = 1260, tryy = 1000;
-    g = c.createRadialGradient(tcx, tcy - 600, 100, tcx, tcy - 300, 1300); g.addColorStop(0, '#c23322'); g.addColorStop(0.6, '#9c2014'); g.addColorStop(1, '#5e100a'); c.fillStyle = g;
-    c.beginPath(); c.ellipse(tcx, tcy, trx, tryy, 0, 0, 7); c.fill();
-    c.strokeStyle = 'rgba(255,190,150,.45)'; c.lineWidth = 3; c.beginPath(); c.ellipse(tcx, tcy, trx - 2, tryy - 2, 0, Math.PI * 1.1, Math.PI * 1.9); c.stroke();
-    [[130, wallB + 230, 380, 90], [W - 120, wallB + 260, 340, 80]].forEach(function (h) {         // 提灯の 映りこみ(漆の つや)
-      c.save(); c.translate(h[0], h[1]); c.scale(1, h[3] / h[2]); g = c.createRadialGradient(0, 0, 0, 0, 0, h[2]); g.addColorStop(0, 'rgba(255,200,160,.32)'); g.addColorStop(1, 'rgba(255,200,160,0)'); c.fillStyle = g; c.beginPath(); c.arc(0, 0, h[2], 0, 7); c.fill(); c.restore();
-    });
-    // 調味料(醤油・酢・ラー油)を 回転台の 奥の 卓に
-    var cx0 = 150, cy0 = H * 0.39;
-    c.fillStyle = 'rgba(40,6,2,.35)'; c.beginPath(); c.ellipse(cx0 + 50, cy0 + 8, 120, 26, 0, 0, 7); c.fill();
-    [['#2a120a', '#b5281c'], ['rgba(214,196,150,.85)', '#f2ece0'], ['#b5321a', '#b5281c']].forEach(function (b, j) {
-      var bxx = cx0 - 20 + j * 62, h2 = 112;
-      g = c.createLinearGradient(bxx - 24, 0, bxx + 24, 0); g.addColorStop(0, 'rgba(255,255,255,.35)'); g.addColorStop(0.3, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(0,0,0,.25)');
-      c.fillStyle = b[0]; rr(c, bxx - 24, cy0 - h2, 48, h2, 16); c.fill(); c.fillStyle = g; rr(c, bxx - 24, cy0 - h2, 48, h2, 16); c.fill();
-      c.fillStyle = b[1]; rr(c, bxx - 16, cy0 - h2 - 26, 32, 30, 6); c.fill(); c.fillStyle = 'rgba(0,0,0,.2)'; c.fillRect(bxx - 16, cy0 - h2 - 2, 32, 4);
-    });
-    // ガラスの回転台
-    var P = plateC(), sr = { x: P.x, y: P.y + 10, rx: 560, ry: 305 };
-    c.fillStyle = 'rgba(50,8,4,.35)'; c.beginPath(); c.ellipse(sr.x + 10, sr.y + 26, sr.rx, sr.ry, 0, 0, 7); c.fill();
-    g = c.createLinearGradient(0, sr.y - sr.ry, 0, sr.y + sr.ry); g.addColorStop(0, 'rgba(225,245,240,.16)'); g.addColorStop(1, 'rgba(225,245,240,.06)'); c.fillStyle = g;
-    c.beginPath(); c.ellipse(sr.x, sr.y, sr.rx, sr.ry, 0, 0, 7); c.fill();
-    c.strokeStyle = 'rgba(200,236,226,.55)'; c.lineWidth = 7; c.stroke(); c.strokeStyle = 'rgba(40,70,64,.35)'; c.lineWidth = 2; c.beginPath(); c.ellipse(sr.x, sr.y + 4, sr.rx - 6, sr.ry - 5, 0, 0, 7); c.stroke();
-    c.strokeStyle = 'rgba(255,255,255,.4)'; c.lineWidth = 5; c.beginPath(); c.ellipse(sr.x, sr.y, sr.rx - 30, sr.ry - 18, 0, Math.PI * 1.15, Math.PI * 1.45); c.stroke();
-    // 大皿(白磁 + 縁に 朱の雷文)
-    c.fillStyle = 'rgba(40,10,4,.32)'; c.beginPath(); c.ellipse(P.x + 14, P.y + 22, P.rx, P.ry, 0, 0, 7); c.fill();
-    g = c.createRadialGradient(P.x - 120, P.y - 80, 40, P.x, P.y, P.rx); g.addColorStop(0, '#ffffff'); g.addColorStop(0.7, '#f1efe9'); g.addColorStop(1, '#d9d4ca'); c.fillStyle = g;
-    c.beginPath(); c.ellipse(P.x, P.y, P.rx, P.ry, 0, 0, 7); c.fill();
-    c.strokeStyle = 'rgba(150,140,125,.5)'; c.lineWidth = 3; c.beginPath(); c.ellipse(P.x, P.y + 4, P.rx * 0.8, P.ry * 0.8, 0, 0, 7); c.stroke();
-    c.strokeStyle = '#b5281c'; c.lineWidth = 3; c.beginPath(); c.ellipse(P.x, P.y, P.rx * 0.97, P.ry * 0.97, 0, 0, 7); c.stroke(); c.beginPath(); c.ellipse(P.x, P.y, P.rx * 0.84, P.ry * 0.84, 0, 0, 7); c.stroke();
-    var NK = 34; c.lineWidth = 3.2; c.lineJoin = 'miter';
-    for (k = 0; k < NK; k++) {                                                    // 雷文(四角い うず)を 縁に並べる
-      var a = k / NK * Math.PI * 2, rxk = P.rx * 0.905, ryk = P.ry * 0.905, px = P.x + Math.cos(a) * rxk, py = P.y + Math.sin(a) * ryk, s = 15;
-      c.save(); c.translate(px, py); c.scale(1, P.ry / P.rx); c.rotate(a + Math.PI / 2);
-      c.beginPath(); c.moveTo(-s, s * 0.6); c.lineTo(-s, -s * 0.6); c.lineTo(s * 0.5, -s * 0.6); c.lineTo(s * 0.5, s * 0.3); c.lineTo(-s * 0.4, s * 0.3); c.lineTo(-s * 0.4, -s * 0.15); c.lineTo(s * 0.1, -s * 0.15); c.stroke(); c.restore();
-    }
-    // 店の明かり(上が 少し明るく、すみが 暗い)
-    g = c.createRadialGradient(540, H * 0.42, H * 0.25, 540, H * 0.45, H * 0.8); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(20,6,2,.45)'); c.fillStyle = g; c.fillRect(0, 0, W, H);
+    c.restore();
   }
-  var potCv = null;
-  function drawBg() {                                // 町中華の客席(仮の絵)/ 茹でる所は 同じ卓に 鍋(いまは 家の鍋の写真を 丸く切り抜いて 載せている)
-    sx(bg); var boilBg = st === 'BOIL' || (st === 'RESULT' && boil), s = H / BGI.h;
-    drawShop(bg);
-    if (boilBg) {
-      if (!potCv || potCv.h !== H) {
-        potCv = mk(W, H); potCv.h = H; var c = potCv.getContext('2d');
-        try { c.filter = 'saturate(0.35)'; } catch (e) {} c.drawImage(img.pot, 540 - POTW.cx * s, 0, BGI.w * s, H); try { c.filter = 'none'; } catch (e) {}   // 鍋の外がわに映った 家の机の色を 抜く
-        // 鍋の形だけ残す(縁の楕円 + 胴。下の カセットコンロと 家の机は 消す)。座標は pot.webp の中の値
-        c.globalCompositeOperation = 'destination-in'; c.save(); c.translate(540 - POTW.cx * s, 0); c.scale(s, s); try { c.filter = 'blur(2px)'; } catch (e) {}
-        c.fillStyle = '#000'; c.beginPath(); c.ellipse(578, 915, 481, 352, 0, Math.PI, 0); c.quadraticCurveTo(1045, 1130, 930, 1250); c.ellipse(578, 1250, 352, 85, 0, 0, Math.PI); c.quadraticCurveTo(110, 1130, 97, 915); c.closePath(); c.fill(); c.restore();
-      }
-      var sh = bg.createRadialGradient(560, 1262 * s, 40, 560, 1262 * s, 470 * s); sh.addColorStop(0, 'rgba(30,4,2,.6)'); sh.addColorStop(1, 'rgba(30,4,2,0)');      // 鍋の影(円卓の上)
-      bg.save(); bg.translate(0, 1262 * s); bg.scale(1, 0.3); bg.translate(0, -1262 * s); bg.fillStyle = sh; bg.fillRect(0, 1262 * s - 470 * s, W, 940 * s); bg.restore();
-      bg.drawImage(potCv, 0, 0, W, H);
-    }
+  function drawBg() {
+    sx(bg); var boilBg = st === 'BOIL' || (st === 'RESULT' && boil), s = bgS();
+    bg.fillStyle = '#2c160e'; bg.fillRect(0, 0, W, H);
+    bg.drawImage(boilBg ? img.shop_pot : img.shop, bgX(), 0, BGI.w * s, H);
+    drawMenu(bg);
   }
-  function traySlot(i) {                             // 大皿の上(手に隠れない 上がわ)に 4 コずつ
-    var col = i % 4, row = Math.floor(i / 4), r3 = Math.min(row, 3);
-    var P = plateC(); return { x: P.x - 290 + col * 172 + (r3 % 2) * 60 + (row > 3 ? (row - 3) * 14 : 0), y: P.y - 100 + r3 * 80, rot: Math.sin(i * 7.3) * 0.35 };   // 円卓の大皿の上
+  function traySlot(i) {                             // 大皿の上。奥の列から 並べる(手前は 手に隠れる)。20 コを超えたら 少しずらして重ねる
+    var P = plateC(), rows = [[-0.6, 3], [-0.28, 4], [0.04, 5], [0.36, 5]], k = i % 17, r = 0;
+    while (k >= rows[r][1]) { k -= rows[r][1]; r++; }
+    var dy = rows[r][0], n = rows[r][1], hw = P.rx * 0.74 * Math.sqrt(Math.max(0.05, 1 - dy * dy)), lap = Math.floor(i / 17);
+    return { x: P.x + (n === 1 ? 0 : lerp(-hw + 70, hw - 70, k / (n - 1))) + lap * 22, y: P.y + dy * P.ry * 0.86 - lap * 10, rot: Math.sin(i * 7.3) * 0.22 };
   }
+
 
   function say(text, ms) { bossEl.firstChild.textContent = text; bossEl.classList.add('on'); bossT = now() + (ms || 2200); }
   function pop(text, x, y, col) { pops.push({ text: text, x: x, y: y, t0: now(), col: col || INK }); }
@@ -442,7 +382,7 @@
     game = new G.Game(seed); T0 = now(); vis = {}; vis[0] = { inT: now() - 1000 };
     parts = []; pops = []; leaving = []; stains = []; tray = []; boil = null; endKind = null;
     drill.away = 0; drill.gearK.t = 0; drill.gearK.x = 0; drill.rpm = 0; sq.t = 1; sq.x = 1;
-    st = 'PLAY'; drawBg();
+    st = 'PLAY'; menuHung = false; drawBg();
     resEl.classList.remove('on'); startEl.classList.add('off'); titleEl.classList.add('off');
     hintEl.textContent = T('長押しで ネジを締める。頭が皮に沈んだら 離す', 'Hold to drive the screw. Let go when the head sinks in.'); setOpen(false); hintEl.classList.add('on');
     play('boss'); say(T('大将「お前の包んだのは 茹でたら開くねん」', 'Chef: "Yours always pop open in the pot."'), 3000); bgmLayer(0);
@@ -471,11 +411,11 @@
   // 結果 = 店の品書き札。開かなかった数だけが「ネジ水餃子」として 今日の品書きに載る
   function showResult() {
     st = 'RESULT'; bgmLayer(0); var k = endKind, c = game.closed, big = $('r-big'), rk = $('r-rank'), ko = JA ? '<small>コ</small>' : ''; big.className = ''; rk.className = '';
-    var stat = T('分速 ' + game.perMin() + ' コ　ぴたっ ' + game.flush() + '%　開いた ' + game.opened + ' コ', game.perMin() + ' per min   flush ' + game.flush() + '%   opened ' + game.opened);
+    var stat = [T('分速 ' + game.perMin() + ' コ', game.perMin() + '/min'), T('ぴたっ ' + game.flush() + '%', 'Flush ' + game.flush() + '%'), T('開いた ' + game.opened + ' コ', 'Opened ' + game.opened)];
     $('r-head').textContent = T('本日の品書き', "Today's menu");
     if (k === 'clear') {
       var r = RANKS[G.rank(c)]; $('r-dish').textContent = T('ネジ水餃子', 'Screwed Dumplings'); $('r-label').textContent = T('茹でても 開かなかった', 'Stayed shut in the pot'); big.innerHTML = c + ko;
-      rk.textContent = T(r[0], r[1]); $('r-line').textContent = T(r[2], r[3]); $('r-stat').textContent = stat; play('clear'); play('gong'); haptic('clear');
+      rk.textContent = T(r[0], r[1]); $('r-line').textContent = T(r[2], r[3]); setStat(stat); play('clear'); play('gong'); haptic('clear'); menuHung = true; drawBg();   // 壁の右端の黄色い短冊に「ネジ水餃子 時価」が 書き足される
       shareText = T('餃子とドリル: 本日の品書き「ネジ水餃子」' + c + ' コ。肩書きは「' + r[0] + '」', 'Dumplings & Drill: ' + c + ' screwed dumplings made the menu. Title: ' + r[1]);
     } else {
       // [品書きに載った物, 説明, 大きい字, 大きい字が言葉か, 肩書きの所, 大将の一言]
@@ -484,12 +424,13 @@
         fired: [T('品切れ', 'Sold Out'), T('3 コ 破いた', 'Tore three dumplings'), T('没収', 'Confiscated'), true, '', T('大将「具が もったいない」', 'Chef: "Waste of good filling."')],
         idle: [T('品切れ', 'Sold Out'), T('ドリルを持って 立っていた', 'Stood there holding a drill'), '…', true, '', T('大将「…何しとんねん」', 'Chef: "...What are you doing?"')] }[k];
       $('r-dish').textContent = L[0]; $('r-label').textContent = L[1]; big.innerHTML = L[2]; if (L[3]) big.className = 'word';
-      rk.textContent = L[4]; rk.className = 'bad'; $('r-line').textContent = L[5]; $('r-stat').textContent = k === 'idle' ? '' : stat; play('over'); haptic('bad');
+      rk.textContent = L[4]; rk.className = 'bad'; $('r-line').textContent = L[5]; setStat(k === 'idle' ? [] : stat); play('over'); haptic('bad');
       shareText = T('餃子とドリル: 本日の品書き「' + L[0] + '」' + L[1] + '。' + L[5], 'Dumplings & Drill: Today\'s menu: ' + L[0] + '. ' + L[5]);
     }
     $('b-again').textContent = T('もう一回', 'Again'); $('b-share').textContent = T('シェア', 'Share');
     resEl.classList.add('on');
   }
+  function setStat(a) { var el = $('r-stat'); el.textContent = ''; a.forEach(function (x) { var sp = document.createElement('span'); sp.textContent = x; el.appendChild(sp); }); }   // 成績は 3 組に分けて 組の間をあける
   function share() {
     var url = location.origin + location.pathname;
     if (navigator.share) { navigator.share({ text: shareText, url: url }).catch(function () {}); return; }
@@ -589,7 +530,7 @@
     sq.step(dt);
     handA.t = (st === 'PLAY' || st === 'WAIT') && d && d.result != null && tn >= goT ? 1 : (st === 'OUT' && endKind === 'fired' ? 1 : 0); handA.step(dt); ho = handAt();
     // 皿の上の 打ち終わった餃子(斜めから見ている皿なので 縦をつぶす)
-    for (i = 0; i < tray.length; i++) if (tray[i].shown) { var s = traySlot(i); c.save(); c.translate(s.x, s.y); c.scale(1, 0.7); c.rotate(s.rot);
+    for (i = 0; i < tray.length; i++) if (tray[i].shown) { var s = traySlot(i); c.save(); c.translate(s.x, s.y); c.scale(0.64, 0.6); c.rotate(s.rot);
       var sg = c.createRadialGradient(0, 0, 60, 0, 0, 132); sg.addColorStop(0, 'rgba(70,56,36,.34)'); sg.addColorStop(1, 'rgba(70,56,36,0)'); c.save(); c.translate(8, 2); c.scale(1, 0.6); c.fillStyle = sg; c.beginPath(); c.arc(0, 0, 132, 0, 7); c.fill(); c.restore();
       c.drawImage(tray[i].cv, -126, -132, 252, 168); c.restore(); }
     for (i = leaving.length - 1; i >= 0; i--) { var lv = leaving[i]; if (tn - lv.t0 >= lv.dur) { tray[lv.i].shown = true; play('plate'); haptic('plate'); leaving.splice(i, 1); } }
@@ -665,7 +606,7 @@
   function drawPops(c, tn) {
     c.textAlign = 'center'; c.textBaseline = 'alphabetic'; c.lineJoin = 'round';
     for (var i = pops.length - 1; i >= 0; i--) { var p = pops[i], a = (tn - p.t0) / 800; if (a >= 1) { pops.splice(i, 1); continue; }
-      var e = ease(a * 2.2), yy = p.y - 46 * e; c.globalAlpha = a < 0.7 ? 1 : 1 - (a - 0.7) / 0.3; c.font = '72px ' + FONT; c.lineWidth = 14; c.strokeStyle = PAPER; c.strokeText(p.text, clamp(p.x, 150, W - 150), yy); c.fillStyle = p.col; c.fillText(p.text, clamp(p.x, 150, W - 150), yy); }
+      var e = ease(a * 2.2), yy = p.y - 46 * e; c.globalAlpha = a < 0.7 ? 1 : 1 - (a - 0.7) / 0.3; c.font = JA ? '76px ' + FONT : '700 64px ' + FONT_SUNG; c.lineWidth = 14; c.strokeStyle = PAPER; c.strokeText(p.text, clamp(p.x, 150, W - 150), yy); c.fillStyle = p.col; c.fillText(p.text, clamp(p.x, 150, W - 150), yy); }
     c.globalAlpha = 1;
   }
   function drawHud(c, tn) {
@@ -677,8 +618,8 @@
 
   // ---- 茹でる ----
   function drawBoil(tn, dt) {
-    var c = fx, b = boil, t = tn - b.t0, s = H / BGI.h, i, g, py = Math.round(H * 0.3);
-    var wx = 540, wy = POTW.cy * s, rx = POTW.rx * s, ry = POTW.ry * s;
+    var c = fx, b = boil, t = tn - b.t0, s = bgS(), i, g, py = Math.round(H * 0.3);
+    var wx = bgX() + POTW.cx * s, wy = POTW.cy * s, rx = POTW.rx * s, ry = POTW.ry * s;
     c.save(); c.beginPath(); c.ellipse(wx, wy, rx, ry, 0, 0, 7); c.clip();   // 泡(写真の湯の上に足す)
     for (i = 0; i < 40; i++) { var ph = (tn / (500 + (i * 37) % 400) + i * 0.37) % 1, bx = wx + Math.cos(i * 2.4) * rx * (0.15 + ((i * 53) % 80) / 100), by = wy + Math.sin(i * 2.4) * ry * (0.15 + ((i * 53) % 80) / 100), br = 4 + ph * (7 + (i % 5) * 3);
       c.strokeStyle = 'rgba(255,255,255,' + 0.7 * (1 - ph) + ')'; c.lineWidth = 2.5; c.beginPath(); c.arc(bx, by, br, 0, 7); c.stroke(); c.fillStyle = 'rgba(255,255,255,' + 0.16 * (1 - ph) + ')'; c.fill(); }
@@ -695,7 +636,7 @@
       if (it.landed) { var rk = clamp((t - it.landT) / 500, 0, 1); c.strokeStyle = 'rgba(255,255,255,' + 0.7 * (1 - rk) + ')'; c.lineWidth = 4; c.beginPath(); c.ellipse(ix, iy + 10, 60 + rk * 70, (60 + rk * 70) * 0.5, 0, 0, 7); c.stroke(); }
       if (it.landed) { c.fillStyle = 'rgba(20,30,34,.2)'; c.beginPath(); c.ellipse(ix + 6, iy + 14, 92 * sc, 44 * sc, 0, 0, 7); c.fill(); }
       c.save(); c.translate(ix, iy + bob + fall); c.scale(sc, sc);
-      if (opened) { var ok2 = ease((t - it.landT - 620) / 220), os = lerp(0.9, 1, ok2); c.scale(os, os); c.rotate(it.ph); c.drawImage(img.dumpling_open, -120, -72, 240, 143); }
+      if (opened) { var ok2 = ease((t - it.landT - 620) / 220), os = lerp(0.9, 1, ok2); c.scale(os, os); c.rotate(it.ph); var oh = 240 * img.dumpling_open.height / img.dumpling_open.width; c.drawImage(img.dumpling_open, -120, -oh / 2, 240, oh); }
       else { c.rotate(Math.sin(it.ph * 3) * 0.5); c.drawImage(it.cv, -105, -110, 210, 140); }
       c.restore();
     }
@@ -705,20 +646,21 @@
     drawPops(c, tn);
     if (st === 'BOIL') {                              // 数え上げ
       var yy = Math.round(H * 0.2), lab = T('開かなかった', 'Stayed shut'), num = String(b.shut + (t > 600 ? b.extraShut : 0));   // 漆の札(壁の品書きの前)
-      c.fillStyle = 'rgba(40,18,10,.9)'; rr(c, 330, yy - 250, 420, 300, 16); c.fill(); c.strokeStyle = GOLD; c.lineWidth = 4; rr(c, 338, yy - 242, 404, 284, 12); c.stroke();
-      c.textAlign = 'center'; c.textBaseline = 'alphabetic'; c.font = '50px ' + FONT; c.fillStyle = PAPER; c.fillText(lab, 540, yy - 168);
-      c.font = '170px ' + FONT; c.fillStyle = '#f7d98e'; c.fillText(num, 540, yy + 4);
+      c.save(); c.shadowColor = 'rgba(20,4,0,.45)'; c.shadowBlur = 24; c.shadowOffsetY = 10; c.fillStyle = '#eee1c1'; rr(c, 330, yy - 250, 420, 300, 6); c.fill(); c.restore();
+      c.strokeStyle = 'rgba(48,37,29,.28)'; c.lineWidth = 2; rr(c, 331, yy - 249, 418, 298, 6); c.stroke();
+      c.textAlign = 'center'; c.textBaseline = 'alphabetic'; c.font = '500 46px ' + FONT_SUNG; c.fillStyle = '#30251d'; c.fillText(lab, 540, yy - 172);
+      c.font = '900 168px ' + FONT_SUNG; c.fillStyle = '#a33728'; c.fillText(num, 540, yy + 2);
     }
   }
 
   // ---- 起動 ----
   function loop() { frame(now()); requestAnimationFrame(loop); }
   window.addEventListener('resize', layout);
-  Promise.all(['pot', 'dumpling', 'dumpling_open', 'hand', 'hand_thin', 'hand_torn', 'head', 'drill', 'screw', 'drill_side'].map(function (n) { return load(n, 'assets/' + n + '.webp'); }).concat([ document.fonts ? document.fonts.load('40px "YujiBoku"', '餃子とドリル').catch(function () {}) : null, document.fonts ? document.fonts.load('40px "GZNum"', '0123').catch(function () {}) : null])).then(function () {
+  Promise.all(['shop', 'shop_pot', 'dumpling', 'dumpling_open', 'hand', 'hand_thin', 'hand_torn', 'head', 'drill', 'screw', 'drill_side'].map(function (n) { return load(n, 'assets/' + n + '.webp'); }).concat([ document.fonts ? document.fonts.load('40px "YujiSyuku"', '餃子麻婆豆腐ぴたっ').catch(function () {}) : null, document.fonts ? Promise.all(['500', '700', '900'].map(function (w) { return document.fonts.load(w + ' 40px "ChironSung"', '餃子0123Aa'); })).catch(function () {}) : null])).then(function () {
     ['hand', 'hand_thin', 'hand_torn'].forEach(function (n) { spr[n] = bake(img[n], HS, 34, 30); }); spr.drill = bake(img.drill, DRL_F.ds, 30, 34); spr.drill_side = bake(img.drill_side, DRL_S.ds, 30, 34);
     ready = true; layout();
     game = new G.Game(1); vis[0] = { inT: -1000 }; st = 'TITLE'; lastT = now();
-    titleEl.querySelector('h1').innerHTML = T('餃子と<br>ドリル', 'Dumplings<br>&amp; Drill'); if (!JA) titleEl.classList.add('en');
+    titleEl.querySelector('h1').innerHTML = T('餃子<span class="to">と</span><br>ドリル', 'Dumplings<br>&amp; Drill');   // 「と」は 親字の 8 割弱(Codex の講評) if (!JA) titleEl.classList.add('en');
     titleEl.querySelector('p').innerHTML = T('開店まで 45 秒<br>茹でても開かないように ネジで閉める', '45 seconds till we open.<br>Screw them shut so they survive the pot.');
     $('b-in').textContent = T('ドリルを持つ', 'Grab the drill'); $('b-set').textContent = T('設定', 'Settings'); $('b-set2').textContent = T('設定', 'Settings');
     buildSettings(); drawBg(); requestAnimationFrame(loop);
