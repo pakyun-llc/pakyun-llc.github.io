@@ -69,7 +69,7 @@
   function audioOn() {
     if (AC) { if (AC.state === 'suspended') AC.resume(); bgmSync(); return; }
     var C = window.AudioContext || window.webkitAudioContext; if (!C) return;
-    AC = new C(); master = AC.createGain(); master.gain.value = 0.6;
+    AC = new C(); master = AC.createGain(); master.gain.value = 0.6; setTimeout(voiceLoad, 0);
     var comp = AC.createDynamicsCompressor(); master.connect(comp); comp.connect(AC.destination);
     analyser = AC.createAnalyser(); analyser.fftSize = 2048; master.connect(analyser);
     sfx = AC.createGain(); sfx.gain.value = SET.sfx ? 1 : 0; sfx.connect(master);
@@ -206,6 +206,23 @@
     gong: function (t) { gong(t, 150, 0.2, 2.6, sfx); },                                                                                 // 大将の 銅鑼(のれん・結果)
     clear: function (t) { [1047, 1319, 1568, 2093].forEach(function (f, i) { tone('sine', f, f, t + i * 0.09, 0.004, i === 3 ? 0.6 : 0.16, 0.09); }); }
   };
+  // 大将の声(2026-11-26。中国語。OpenAI の読み上げで作った mp3 = out/voice/v3。字幕は端末の言語のまま)。効果音と同じ入/切
+  var VOICE = {}, voiceSrc = null, voiceLoading = false;
+  var VOICE_KEYS = ['open', 'stage1', 'stage2', 'tear', 'fired_say', 'wait', 'rank1', 'rank2', 'rank3', 'rank4', 'soup', 'slow', 'fired', 'idle'];
+  function voiceLoad() {
+    if (!AC || voiceLoading) return; voiceLoading = true;
+    VOICE_KEYS.forEach(function (k) {
+      fetch('assets/voice/' + k + '.mp3').then(function (r) { return r.arrayBuffer(); })
+        .then(function (b) { return new Promise(function (ok, ng) { AC.decodeAudioData(b, ok, ng); }); })
+        .then(function (buf) { VOICE[k] = buf; }).catch(function () {});
+    });
+  }
+  function voice(k) {
+    soundLog.push('voice:' + k); if (soundLog.length > 800) soundLog.shift();
+    if (!AC || AC.state !== 'running' || !VOICE[k]) return;
+    try { if (voiceSrc) voiceSrc.stop(); } catch (e) {}
+    try { var s = AC.createBufferSource(), g = AC.createGain(); g.gain.value = 1.1; s.buffer = VOICE[k]; s.connect(g); g.connect(sfx); s.start(AC.currentTime + 0.02); voiceSrc = s; } catch (e) {}
+  }
   function play(name) {
     soundLog.push(name); if (soundLog.length > 800) soundLog.shift();
     if (!AC || AC.state !== 'running') return;
@@ -362,7 +379,7 @@
         if (e.grade === 'perfect') { play('perfect'); haptic('perfect'); pop(T('ぴたっ', 'Flush!'), wx, wy - 90, RED); sq.v -= 1.6; puff(wx, wy, 5, 120); }
         else if (e.grade === 'ok') { play('ok'); haptic('ok'); pop(T('よし', 'OK'), wx, wy - 90); sq.v -= 0.9; }
         else if (e.grade === 'loose') { play('loose'); haptic('loose'); pop(T('ゆるい', 'Loose'), wx, wy - 90 - hgtOf(dd.screws[e.screw])); }
-        else { play('tear'); haptic('tear'); pop(T('やぶれた', 'Torn!'), 560, wy - 150, RED); burst(560, wy + 60); shakeT = now(); sq.v -= 2; say(T('大将「具が出てる！」', 'Chef: "The filling!"'), 1300); }
+        else { play('tear'); haptic('tear'); pop(T('やぶれた', 'Torn!'), 560, wy - 150, RED); burst(560, wy + 60); shakeT = now(); sq.v -= 2; say(T('大将「具が出てる！」', 'Chef: "The filling!"'), 1300); voice('tear'); }
         drill.lift.x = e.grade === 'tear' ? 90 : 40;
       } else if (e.type === 'dumpling') {
         goT = now() + (e.result === 'torn' ? 480 : 40);            // 手が 皿のほうへ下がる(破れたら 少し見せてから)
@@ -370,8 +387,8 @@
       } else if (e.type === 'spawn') { vis[e.d.id] = { inT: now() }; sq.t = 1; }
       else if (e.type === 'stage') {
         play('boss');
-        if (e.stage === 1) { say(T('大将「湯が沸いてきた！ ネジは 4 本」', 'Chef: "Water\'s nearly boiling! Four screws each!"')); bgmLayer(1); }
-        else { say(T('大将「のれん出すで！ ハイにせえ」', 'Chef: "We\'re opening! Switch it to HI!"')); play('gear'); play('gong'); haptic('gear'); drill.gearK.t = 1; bgmLayer(2); }
+        if (e.stage === 1) { say(T('大将「湯が沸いてきた！ ネジは 4 本」', 'Chef: "Water\'s nearly boiling! Four screws each!"')); voice('stage1'); bgmLayer(1); }
+        else { say(T('大将「のれん出すで！ ハイにせえ」', 'Chef: "We\'re opening! Switch it to HI!"')); voice('stage2'); play('gear'); play('gong'); haptic('gear'); drill.gearK.t = 1; bgmLayer(2); }
       } else if (e.type === 'timeup') { play('whistle'); }
       else if (e.type === 'end') finish(e.kind);
     }
@@ -387,14 +404,14 @@
     st = 'PLAY'; menuHung = false; drawBg(); nativeScreen('play');
     resEl.classList.remove('on'); startEl.classList.add('off'); titleEl.classList.add('off');
     hintEl.textContent = T('長押しで ネジを締める。頭が皮に沈んだら 離す', 'Hold to drive the screw. Let go when the head sinks in.'); setOpen(false); hintEl.classList.add('on');
-    play('boss'); say(T('大将「お前の包んだのは 茹でたら開くねん」', 'Chef: "Yours always pop open in the pot."'), 3000); bgmLayer(0);
+    say(T('大将「お前の包んだのは 茹でたら開くねん」', 'Chef: "Yours always pop open in the pot."'), 3000); voice('open'); bgmLayer(0);
   }
   function finish(kind) {
     endKind = kind; endT = now(); hintEl.classList.remove('on'); drillSound(0, 0, 1);
-    if (kind === 'fired') { st = 'OUT'; play('boss'); say(T('大将「ドリル置け。皿洗いや」', 'Chef: "Drop the drill. Go wash dishes."'), 1500); haptic('bad'); }
+    if (kind === 'fired') { st = 'OUT'; say(T('大将「ドリル置け。皿洗いや」', 'Chef: "Drop the drill. Go wash dishes."'), 1500); voice('fired_say'); haptic('bad'); }
     else if (kind === 'idle') { st = 'OUT'; }
     else if (!game.done.length) { st = 'OUT'; }
-    else { st = 'WAIT'; say(T('大将「湯が沸いた。入れるで」', 'Chef: "It\'s boiling. In they go."'), 1500); }
+    else { st = 'WAIT'; say(T('大将「湯が沸いた。入れるで」', 'Chef: "It\'s boiling. In they go."'), 1500); voice('wait'); }
   }
   function startBoil() {
     var n = Math.min(game.done.length, 20), items = [], gap = Math.min(240, 3200 / n), i;
@@ -417,7 +434,7 @@
     $('r-head').textContent = T('本日の品書き', "Today's menu");
     if (k === 'clear') {
       var r = RANKS[G.rank(c)]; $('r-dish').textContent = T('ネジ水餃子', 'Screwed Dumplings'); $('r-label').textContent = T('茹でても 開かなかった', 'Stayed shut in the pot'); big.innerHTML = c + ko;
-      rk.textContent = T(r[0], r[1]); $('r-line').textContent = T(r[2], r[3]); setStat(stat); play('clear'); play('gong'); haptic('clear'); menuHung = true; drawBg();   // 壁の右端の黄色い短冊に「ネジ水餃子 時価」が 書き足される
+      rk.textContent = T(r[0], r[1]); $('r-line').textContent = T(r[2], r[3]); voice('rank' + (G.rank(c) + 1)); setStat(stat); play('clear'); play('gong'); haptic('clear'); menuHung = true; drawBg();   // 壁の右端の黄色い短冊に「ネジ水餃子 時価」が 書き足される
       shareText = T('餃子とドリル: 本日の品書き「ネジ水餃子」' + c + ' コ。肩書きは「' + r[0] + '」', 'Dumplings & Drill: ' + c + ' screwed dumplings made the menu. Title: ' + r[1]);
     } else {
       // [品書きに載った物, 説明, 大きい字, 大きい字が言葉か, 肩書きの所, 大将の一言]
@@ -426,7 +443,7 @@
         fired: [T('品切れ', 'Sold Out'), T('3 コ 破いた', 'Tore three dumplings'), T('没収', 'Confiscated'), true, '', T('大将「具が もったいない」', 'Chef: "Waste of good filling."')],
         idle: [T('品切れ', 'Sold Out'), T('ドリルを持って 立っていた', 'Stood there holding a drill'), '…', true, '', T('大将「…何しとんねん」', 'Chef: "...What are you doing?"')] }[k];
       $('r-dish').textContent = L[0]; $('r-label').textContent = L[1]; big.innerHTML = L[2]; if (L[3]) big.className = 'word';
-      rk.textContent = L[4]; rk.className = 'bad'; $('r-line').textContent = L[5]; setStat(k === 'idle' ? [] : stat); play('over'); haptic('bad');
+      rk.textContent = L[4]; rk.className = 'bad'; $('r-line').textContent = L[5]; voice(k); setStat(k === 'idle' ? [] : stat); play('over'); haptic('bad');
       shareText = T('餃子とドリル: 本日の品書き「' + L[0] + '」' + L[1] + '。' + L[5], 'Dumplings & Drill: Today\'s menu: ' + L[0] + '. ' + L[5]);
     }
     $('b-again').textContent = T('もう一回', 'Again'); $('b-share').textContent = T('シェア', 'Share');
