@@ -656,11 +656,12 @@
   // ---- 起動 ----
   function loop() { frame(now()); requestAnimationFrame(loop); }
   window.addEventListener('resize', layout);
-  Promise.all(['shop', 'shop_pot', 'dumpling', 'dumpling_open', 'hand', 'hand_thin', 'hand_torn', 'head', 'drill', 'screw', 'drill_side'].map(function (n) { return load(n, 'assets/' + n + '.webp'); }).concat([ document.fonts ? document.fonts.load('40px "YujiSyuku"', '餃子麻婆豆腐ぴたっ').catch(function () {}) : null, document.fonts ? Promise.all(['500', '700', '900'].map(function (w) { return document.fonts.load(w + ' 40px "ChironSung"', '餃子0123Aa'); })).catch(function () {}) : null])).then(function () {
+  Promise.all(['shop', 'shop_pot', 'dumpling', 'dumpling_open', 'hand', 'hand_thin', 'hand_torn', 'head', 'drill', 'screw', 'drill_side'].map(function (n) { return load(n, 'assets/' + n + '.webp'); }).concat([ document.fonts ? document.fonts.load('40px "ReggaeOne"', '餃子とドリルDumplings&Drill').catch(function () {}) : null, document.fonts ? document.fonts.load('40px "YujiSyuku"', '餃子麻婆豆腐ぴたっ').catch(function () {}) : null, document.fonts ? Promise.all(['500', '700', '900'].map(function (w) { return document.fonts.load(w + ' 40px "ChironSung"', '餃子0123Aa'); })).catch(function () {}) : null])).then(function () {
     ['hand', 'hand_thin', 'hand_torn'].forEach(function (n) { spr[n] = bake(img[n], HS, 34, 30); }); spr.drill = bake(img.drill, DRL_F.ds, 30, 34); spr.drill_side = bake(img.drill_side, DRL_S.ds, 30, 34);
     ready = true; layout();
     game = new G.Game(1); vis[0] = { inT: -1000 }; st = 'TITLE'; lastT = now();
-    titleEl.querySelector('h1').innerHTML = T('餃子<span class="to">と</span><br>ドリル', 'Dumplings<br>&amp; Drill');   // 「と」は 親字の 8 割弱(Codex の講評) if (!JA) titleEl.classList.add('en');
+    titleEl.querySelector('h1').innerHTML = T('餃子<span class="to">と</span><br><span class="l2">ドリル</span>', 'Dumplings<br><span class="l2">&amp; Drill</span>');   // 題字 = Reggae One。「と」は小さく
+    if (!JA) titleEl.classList.add('en');
     titleEl.querySelector('p').innerHTML = T('開店まで 45 秒<br>茹でても開かないように ネジで閉める', '45 seconds till we open.<br>Screw them shut so they survive the pot.');
     $('b-in').textContent = T('ドリルを持つ', 'Grab the drill'); $('b-set').textContent = T('設定', 'Settings'); $('b-set2').textContent = T('設定', 'Settings');
     buildSettings(); drawBg(); requestAnimationFrame(loop);

@@ -13,6 +13,8 @@
 @font-face{font-family:"ChironSung";src:url("fonts/ChironSungHK-700.subset.woff") format("woff");font-weight:600 700;font-display:block}
 @font-face{font-family:"ChironSung";src:url("fonts/ChironSungHK-900.subset.woff") format("woff");font-weight:800 900;font-display:block}
 @font-face{font-family:"YujiSyuku";src:url("fonts/YujiSyuku.subset.woff") format("woff");font-weight:400;font-display:block}
+/* 看板の題字だけ = Reggae One(Fontworks、SIL OFL 1.1)。平筆で切った 太い筆の字 */
+@font-face{font-family:"ReggaeOne";src:url("fonts/ReggaeOne.subset.woff") format("woff");font-weight:400;font-display:block}
 /* 町中華の色: 墨・品書きの紙・朱の漆・金(看板の字と 雷文)・こげ茶(木) */
 :root{--ink:#30251d;--paper:#efe2c4;--shu:#a33728;--sung:"ChironSung","Hiragino Mincho ProN","Yu Mincho",serif;--brush:"YujiSyuku","ChironSung","Hiragino Mincho ProN",serif;--red:#b5281c;--lacq:#8e1a10;--gold:#d6a84a;--wood:#2c160e;--ease-out:cubic-bezier(.23,1,.32,1);--u:1px;
   /* 雷文(四角い うず)の帯。看板と 設定の札の 上下に使う */
@@ -35,12 +37,15 @@ body{font-family:var(--brush);font-weight:400;color:var(--ink);
 .sign::before,.sign::after{content:"";position:absolute;left:calc(var(--u)*22);right:calc(var(--u)*22);height:calc(var(--u)*24);
   background:var(--meander) repeat-x center/calc(var(--u)*24) calc(var(--u)*24);opacity:.85}
 .sign::before{top:calc(var(--u)*20)}.sign::after{bottom:calc(var(--u)*20)}
-/* 金文字は 朱漆に薄く盛った金: 平金に ゆるい縦の勾配、下に 暗い赤茶を 1 px(全周の縁取り・白い光は入れない = 食偏の隙間を潰さない) */
-#title h1{margin:0;font-family:var(--sung);font-weight:900;font-size:calc(var(--u)*158);line-height:1.08;letter-spacing:0;
-  color:#ebcb83;background:linear-gradient(#f3d99a,#ddb76e);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
-  filter:drop-shadow(0 calc(var(--u)*3) 0 #66321e)}
-#title h1 .to{font-size:.78em}
-#title.en h1{font-size:calc(var(--u)*104);line-height:1.12;letter-spacing:.02em}
+/* 題字 = 町中華の大看板: 太い筆の字を 生成りの白で、墨の縁取り + 右下へ 墨の厚み(切り文字の板)。金の縁は 看板の枠だけ */
+#title h1{margin:0;font-family:"ReggaeOne",var(--sung);font-weight:400;font-size:calc(var(--u)*196);line-height:1.0;letter-spacing:-.02em;
+  color:#fff7e6;-webkit-text-stroke:calc(var(--u)*4) #fff7e6;
+  text-shadow:calc(var(--u)*0.8) calc(var(--u)*1) 0 #3a0905,calc(var(--u)*1.6) calc(var(--u)*2) 0 #3a0905,calc(var(--u)*2.4) calc(var(--u)*3) 0 #3a0905,calc(var(--u)*3.2) calc(var(--u)*4) 0 #3a0905,calc(var(--u)*4) calc(var(--u)*5) 0 #3a0905,calc(var(--u)*4.8) calc(var(--u)*6) 0 #3a0905,calc(var(--u)*5.6) calc(var(--u)*7) 0 #3a0905,calc(var(--u)*6.4) calc(var(--u)*8) 0 #3a0905,calc(var(--u)*7.2) calc(var(--u)*9) 0 #3a0905,calc(var(--u)*8) calc(var(--u)*10) 0 #3a0905}
+#title h1 .to{font-size:.62em;margin:0 .04em}
+#title h1 .l2{display:inline-block;margin-top:calc(var(--u)*6)}
+#title.en h1{font-size:calc(var(--u)*146);line-height:1.04;letter-spacing:0}
+#title:not(.en) .sign{padding-top:calc(var(--u)*44);padding-bottom:calc(var(--u)*68)}
+#title.en .sign{padding-left:calc(var(--u)*44);padding-right:calc(var(--u)*44)}
 #title p{margin:calc(var(--u)*34) 0 0;font-size:calc(var(--u)*46);letter-spacing:.04em;line-height:1.35}
 #title.off{opacity:0;transform:translateY(calc(var(--u)*-14))}
 #start{position:absolute;left:0;right:0;bottom:calc(var(--u)*120 + env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center;gap:calc(var(--u)*30);transition:opacity 200ms var(--ease-out)}
