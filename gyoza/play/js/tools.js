@@ -155,6 +155,197 @@
   Cut.prototype.left = function (t) { return this.firstT == null ? this.cfg.time : Math.max(0, this.endT - t); };
   Cut.prototype.flush = function () { var n = this.log.filter(function (l) { return l.grade !== 'cut_short'; }).length; return n ? Math.round(this.perfect / n * 100) : 0; };
 
-  var api = { Staple: Staple, Cut: Cut, STAPLE: STAPLE, CUT: CUT, IDLE_MS: IDLE_MS };
+
+  // ================= 四品目: コーキングガンで 焼売の皮に 餡を 花の形に 絞る =================
+  // 皮の上に 花(5 弁)の 点線。指を置いたまま 点線を 一周なぞる = 餡の すじ(ビード)が のる。
+  // 一周(36 区切りの 34 以上)で 自動で 決まる。途中で離す = 足りない / 線から それる = はみ出た / 速すぎ = 細い / 遅すぎ = ぼてっ
+  var CAULK = {
+    time: 40000, quota: 9, top: 19, R: 200, tol: 46, near: 60, bins: 36, need: 34, reset: 450,
+    phases: [ { from: 0, size: 1 }, { from: 20000, size: 0.66 } ]     // 20 秒: 子ども席の 小粒(花が 小さい)
+  };
+  function flowerR(R, a) { return R * (1 + 0.16 * Math.cos(5 * a)); }
+  function Caulk(seed, cfg) {
+    this.cfg = cfg || CAULK; this.firstT = null; this.endT = null; this.over = null; this.stage = 0;
+    this.good = 0; this.perfect = 0; this.bad = 0; this.log = []; this.stroke = null; this.readyT = 0; this.n = 0;
+  }
+  Caulk.prototype.size = function () { return this.cfg.phases[this.stage].size; };
+  Caulk.prototype.radius = function (a) { return flowerR(this.cfg.R * this.size(), a); };
+  Caulk.prototype.advance = function (t, out) {
+    out = out || []; if (this.over) return out;
+    if (this.firstT == null) { if (t >= IDLE_MS) { this.over = 'idle'; out.push({ type: 'end', t: IDLE_MS, kind: 'idle' }); } return out; }
+    var ns = this.stage + 1;
+    if (ns < this.cfg.phases.length && t >= this.firstT + this.cfg.phases[ns].from && !this.stroke) { this.stage = ns; out.push({ type: 'stage', t: t, stage: ns }); }
+    if (t >= this.endT) { if (this.stroke) this.stroke = null; out.push({ type: 'timeup', t: this.endT }); this.over = this.good >= this.cfg.quota ? 'clear' : 'slow'; out.push({ type: 'end', t: this.endT, kind: this.over }); }
+    return out;
+  };
+  Caulk.prototype.ready = function (t) { return t >= this.readyT; };
+  // c = 花の まん中(舞台の座標)
+  Caulk.prototype.down = function (t, x, y, c) {
+    var out = []; this.advance(t, out); if (this.over || t < this.readyT || this.stroke) return out;
+    var dx = x - c.x, dy = y - c.y, a = Math.atan2(dy, dx), e = Math.abs(Math.hypot(dx, dy) - this.radius(a)), k = this.size();
+    if (e > this.cfg.near * Math.max(0.8, k)) { out.push({ type: 'miss_start', t: t }); return out; }
+    if (this.firstT == null) { this.firstT = t; this.endT = t + this.cfg.time; }
+    this.stroke = { t0: t, c: c, bins: {}, nb: 0, se: 0, ns: 0, pts: [{ x: x, y: y, ok: true }] };
+    out.push({ type: 'start', t: t }); this._sample(this.stroke, x, y); return out;
+  };
+  Caulk.prototype._sample = function (s, x, y) {
+    var dx = x - s.c.x, dy = y - s.c.y, a = Math.atan2(dy, dx), e = Math.hypot(dx, dy) - this.radius(a), k = this.size();
+    s.se += e * e; s.ns++;
+    var ok = Math.abs(e) <= this.cfg.tol * Math.max(0.75, k);
+    if (ok) { var b = Math.floor(((a + Math.PI) / (2 * Math.PI)) * this.cfg.bins) % this.cfg.bins; if (!s.bins[b]) { s.bins[b] = 1; s.nb++; } }
+    return ok;
+  };
+  Caulk.prototype.move = function (t, x, y) {
+    var s = this.stroke; if (!s || this.over) return [];
+    var ok = this._sample(s, x, y); s.pts.push({ x: x, y: y, ok: ok });
+    if (s.nb >= this.cfg.need) return this._judge(t);       // 一周 = 自動で決まる
+    return [];
+  };
+  Caulk.prototype.up = function (t, x, y) { var out = []; this.advance(t, out); if (!this.stroke || this.over) return out; return out.concat(this._judge(t)); };
+  Caulk.prototype._judge = function (t) {
+    var s = this.stroke, k = this.size(), dur = t - s.t0, rms = Math.sqrt(s.se / Math.max(1, s.ns)), cov = s.nb / this.cfg.bins, gr;
+    this.stroke = null;
+    if (cov < this.cfg.need / this.cfg.bins) gr = 'short';                 // 一周していない = 餡が 足りない
+    else if (rms > 30 * Math.max(0.75, k)) gr = 'messy';                    // 線から それた = はみ出た
+    else if (dur < 450 * k) gr = 'thin';                                     // 速すぎ = 細くて 切れた
+    else if (dur > 4200 * k) gr = 'blob';                                    // 遅すぎ = ぼてっ と 垂れた
+    else gr = rms <= 12 * Math.max(0.75, k) ? 'perfect' : 'good';
+    this.log.push({ grade: gr, rms: rms, dur: dur, cov: cov });
+    if (gr === 'perfect' || gr === 'good') { this.good++; if (gr === 'perfect') this.perfect++; } else this.bad++;
+    this.n++; this.readyT = t + this.cfg.reset;
+    return [{ type: 'judge', t: t, grade: gr, rms: rms, dur: dur, pts: s.pts, size: k }];
+  };
+  Caulk.prototype.left = function (t) { return this.firstT == null ? this.cfg.time : Math.max(0, this.endT - t); };
+  Caulk.prototype.flush = function () { return this.log.length ? Math.round(this.perfect / this.log.length * 100) : 0; };
+
+  // ================= 五品目: かんなで 長ねぎを 薄く削ぐ(白髪ねぎ)=================
+  // 大工の かんなを 両手(指 2 本 = 左右の取っ手)で 持って、手前(画面の下)へ 一息に引く。指 1 本だと かんなが 傾いて 食い込む。
+  // 判定: 上から下まで 引ききる / 左右の高さの差(傾き)/ 左右の ずれ / 速さ
+  var KANNA = {
+    time: 36000, quota: 12, top: 26, gripDX: 210, gripR: 110, len: 560, reset: 380, minMs: 220, maxMs: 1500, tiltOk: 70, tiltGood: 26, driftOk: 70, jam: 70,
+    phases: [ { from: 0, thick: 0 }, { from: 18000, thick: 1 } ]           // 18 秒: 太い ねぎ(大将「太いのが 来たぞ。まっすぐ 引け」)= 傾きに 厳しい
+  };
+  function Kanna(seed, cfg) {
+    this.cfg = cfg || KANNA; this.firstT = null; this.endT = null; this.over = null; this.stage = 0;
+    this.good = 0; this.perfect = 0; this.bad = 0; this.log = []; this.readyT = 0; this.f = {}; this.stroke = null; this.y0 = 0; this.x0 = 540;
+  }
+  // かんなの 置き場所(上の端)。y0 は 呼ぶ側が 決める(ねぎの 上の端)
+  Kanna.prototype.setTop = function (x0, y0) { this.x0 = x0; this.y0 = y0; };
+  Kanna.prototype.grips = function () { var y = this.stroke ? this.stroke.y : this.y0; return [{ x: this.x0 - this.cfg.gripDX, y: y }, { x: this.x0 + this.cfg.gripDX, y: y }]; };
+  // 指の位置は move で 覚えるだけ。傾き・終わりは advance(毎コマ = 2 本の指が そろってから)で 見る(1 本ずつ届く move で 見ると 一瞬の差を 傾きと 取り違える)
+  Kanna.prototype.advance = function (t, out) {
+    out = out || []; if (this.over) return out;
+    if (this.firstT == null) { if (t >= IDLE_MS) { this.over = 'idle'; out.push({ type: 'end', t: IDLE_MS, kind: 'idle' }); } return out; }
+    if (t >= this.readyT) out = out.concat(this._track(t));
+    var ns = this.stage + 1;
+    if (ns < this.cfg.phases.length && t >= this.firstT + this.cfg.phases[ns].from && !this.stroke) { this.stage = ns; out.push({ type: 'stage', t: t, stage: ns }); }
+    if (t >= this.endT) { this.stroke = null; this.f = {}; out.push({ type: 'timeup', t: this.endT }); this.over = this.good >= this.cfg.quota ? 'clear' : 'slow'; out.push({ type: 'end', t: this.endT, kind: this.over }); }
+    return out;
+  };
+  Kanna.prototype._track = function (t) {
+    var out = [], h = this.hands(); if (!h.L && !h.R) return out;
+    var dyL = h.L ? h.L.y - h.L.y0 : 0, dyR = h.R ? h.R.y - h.R.y0 : 0;
+    if (!(h.L && h.R)) {                                              // 片手で 引くと 傾いて 食い込む
+      if (Math.max(dyL, dyR) > this.cfg.jam) { this.log.push({ grade: 'jam' }); this.bad++; this.f = {}; this.stroke = null; this.readyT = t + this.cfg.reset + 300; out.push({ type: 'judge', t: t, grade: 'jam', side: h.L ? 'L' : 'R' }); }
+      return out;
+    }
+    var dy = (dyL + dyR) / 2;
+    if (!this.stroke && dy > 8) this.stroke = { t0: t, y: this.y0, tilt: 0, drift: 0 };
+    if (!this.stroke) return out;
+    var st = this.stroke; st.y = this.y0 + Math.max(0, dy); st.tilt = Math.max(st.tilt, Math.abs(dyL - dyR)); st.drift = Math.max(st.drift, Math.abs((h.L.x - h.L.x0 + h.R.x - h.R.x0) / 2)); st.dL = dyL; st.dR = dyR;
+    if (dy >= this.cfg.len) out = out.concat(this._judge(t, true));
+    return out;
+  };
+  Kanna.prototype.ready = function (t) { return t >= this.readyT; };
+  // 指 id を 左 / 右の取っ手に 割り当てる。both = マウス(PC)= 1 本で 両手の扱い
+  Kanna.prototype.down = function (t, id, x, y, both) {
+    var out = []; this.advance(t, out); if (this.over || t < this.readyT) return out;
+    var g = this.grips(), R = this.cfg.gripR, side = null;
+    if (both) { if (Math.hypot(x - this.x0, y - this.y0) < this.cfg.gripDX + R) side = 'both'; }
+    else for (var i = 0; i < 2; i++) if (Math.hypot(x - g[i].x, y - g[i].y) <= R) side = i ? 'R' : 'L';
+    if (!side) { out.push({ type: 'miss_start', t: t }); return out; }
+    for (var k in this.f) if (this.f[k].side === side || this.f[k].side === 'both') return out;
+    this.f[id] = { side: side, x: x, y: y, x0: x, y0: y };
+    if (this.firstT == null) { this.firstT = t; this.endT = t + this.cfg.time; }
+    out.push({ type: 'grip', t: t, side: side, hands: this.hands() }); return out;
+  };
+  Kanna.prototype.hands = function () { var L = null, Rr = null; for (var k in this.f) { var f = this.f[k]; if (f.side === 'L' || f.side === 'both') L = f; if (f.side === 'R' || f.side === 'both') Rr = f; } return { L: L, R: Rr }; };
+  Kanna.prototype.move = function (t, id, x, y) { var f = this.f[id]; if (f) { f.x = x; f.y = y; } return []; };
+  Kanna.prototype.up = function (t, id) {
+    var out = []; this.advance(t, out); if (!this.f[id]) return out;
+    var st = this.stroke; delete this.f[id];
+    if (st) { out = out.concat(this._judge(t, false)); } else if (!Object.keys(this.f).length) this.f = {};
+    return out;
+  };
+  Kanna.prototype._judge = function (t, full) {
+    var st = this.stroke, c = this.cfg, dur = t - st.t0, thick = c.phases[this.stage].thick, tOk = c.tiltOk * (thick ? 0.7 : 1), gr;
+    this.stroke = null; this.f = {};
+    if (!full) gr = 'short';                          // 引ききっていない
+    else if (st.tilt > tOk) gr = 'tilt';              // 傾いて 食い込んだ = 厚い かたまり
+    else if (st.drift > c.driftOk) gr = 'drift';      // 横に それた
+    else if (dur < c.minMs) gr = 'fast';              // 速すぎ = ちぎれた
+    else if (dur > c.maxMs) gr = 'slow';              // 遅すぎ = ぼろぼろ
+    else gr = st.tilt <= c.tiltGood * (thick ? 0.8 : 1) ? 'perfect' : 'good';
+    this.log.push({ grade: gr, tilt: st.tilt, drift: st.drift, dur: dur });
+    if (gr === 'perfect' || gr === 'good') { this.good++; if (gr === 'perfect') this.perfect++; } else this.bad++;
+    this.readyT = t + c.reset;
+    return [{ type: 'judge', t: t, grade: gr, tilt: st.tilt, dur: dur }];
+  };
+  Kanna.prototype.left = function (t) { return this.firstT == null ? this.cfg.time : Math.max(0, this.endT - t); };
+  Kanna.prototype.flush = function () { return this.log.length ? Math.round(this.perfect / this.log.length * 100) : 0; };
+
+  // ================= 六品目: 手回しドリルで 麺を ひと口ずつ 巻く(ねじり葱そば)=================
+  // 指で ハンドルを持って 円を描く(右回り)= ドリルの先に 麺が巻きつく。速さの帯(lo〜hi)の中で 回すと 巻ける。
+  // 速すぎ(snap を 0.2 秒 越える)= 麺が ぷつっと 切れて その ひと口は やり直し / 遅い・止まる・左回り = ほどける
+  var CRANK = {
+    time: 40000, quota: 8, top: 15, minR: 60, slack: 0.5, snapMs: 200, pause: 550,
+    phases: [ { from: 0, lo: 0.6, hi: 2.3, snap: 2.9, need: 3 }, { from: 26000, lo: 0.6, hi: 1.7, snap: 2.1, need: 4, chef: 1 } ]   // 26 秒: 大将の 一杯(ゆっくり ていねいに・4 回)
+  };
+  function Crank(seed, cfg) {
+    this.cfg = cfg || CRANK; this.firstT = null; this.endT = null; this.over = null; this.stage = 0;
+    this.done = 0; this.snaps = 0; this.wound = 0; this.omega = 0; this.hist = []; this.f = null; this.overMs = 0; this.pauseT = 0; this.lastT = null; this.log = []; this.chefDone = 0;
+  }
+  Crank.prototype.ph = function () { return this.cfg.phases[this.stage]; };
+  Crank.prototype.advance = function (t, out) {
+    out = out || []; if (this.over) return out;
+    if (this.firstT == null) { if (t >= IDLE_MS) { this.over = 'idle'; out.push({ type: 'end', t: IDLE_MS, kind: 'idle' }); } return out; }
+    var dt = this.lastT == null ? 0 : Math.max(0, t - this.lastT); this.lastT = t;
+    // 指が止まっている・離した = ゆるむ(ほどける)
+    this.hist = this.hist.filter(function (h) { return t - h.t <= 160; });
+    var sum = 0; for (var i = 0; i < this.hist.length; i++) sum += this.hist[i].d; this.omega = this.f ? sum / (2 * Math.PI) / 0.16 : 0;
+    if (t >= this.pauseT && this.omega < this.ph().lo) this.wound = Math.max(0, this.wound - this.cfg.slack * dt / 1000);
+    var ns = this.stage + 1;
+    if (ns < this.cfg.phases.length && t >= this.firstT + this.cfg.phases[ns].from && this.wound < 0.3) { this.stage = ns; this.wound = 0; out.push({ type: 'stage', t: t, stage: ns }); }
+    if (t >= this.endT) { this.f = null; out.push({ type: 'timeup', t: this.endT }); this.over = this.done >= this.cfg.quota ? 'clear' : 'slow'; out.push({ type: 'end', t: this.endT, kind: this.over }); }
+    return out;
+  };
+  // c = ハンドルの 軸(舞台の座標)
+  Crank.prototype.down = function (t, x, y, c) {
+    var out = []; this.advance(t, out); if (this.over) return out;
+    if (Math.hypot(x - c.x, y - c.y) < this.cfg.minR) { out.push({ type: 'miss_start', t: t }); return out; }
+    if (this.firstT == null) { this.firstT = t; this.endT = t + this.cfg.time; this.lastT = t; }
+    this.f = { c: c, a: Math.atan2(y - c.y, x - c.x), lt: t }; this.hist = []; out.push({ type: 'start', t: t }); return out;
+  };
+  Crank.prototype.move = function (t, x, y) {
+    var out = [], f = this.f; if (!f || this.over) return out;
+    if (Math.hypot(x - f.c.x, y - f.c.y) < this.cfg.minR * 0.6) return out;
+    var a = Math.atan2(y - f.c.y, x - f.c.x), d = a - f.a, mdt = Math.min(60, Math.max(0, t - f.lt)); f.lt = t; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; f.a = a;
+    this.hist.push({ t: t, d: d }); this.advance(t, out); if (this.over) return out;
+    var p = this.ph(), w = this.omega;
+    if (t < this.pauseT) return out;
+    if (w > p.snap) { this.overMs += mdt; if (this.overMs >= this.cfg.snapMs) { this.snaps++; this.wound = 0; this.overMs = 0; this.pauseT = t + this.cfg.pause; this.log.push({ grade: 'snap' }); out.push({ type: 'snap', t: t }); return out; } }
+    else this.overMs = Math.max(0, this.overMs - mdt / 2);
+    if (d < 0) this.wound = Math.max(0, this.wound + d / (2 * Math.PI));              // 左回り = ほどける
+    else if (w >= p.lo && w <= p.hi) { var before = this.wound; this.wound += d / (2 * Math.PI); out.push({ type: 'wind', t: t, turn: Math.floor(this.wound) > Math.floor(before) }); }
+    if (this.wound >= p.need) {
+      this.done++; if (p.chef) this.chefDone++; this.wound = 0; this.pauseT = t + this.cfg.pause; this.log.push({ grade: 'done', chef: !!p.chef }); out.push({ type: 'served', t: t, chef: !!p.chef });
+    }
+    return out;
+  };
+  Crank.prototype.up = function (t) { var out = []; this.advance(t, out); this.f = null; this.hist = []; return out; };
+  Crank.prototype.left = function (t) { return this.firstT == null ? this.cfg.time : Math.max(0, this.endT - t); };
+  Crank.prototype.flush = function () { var n = this.done + this.snaps; return n ? Math.round(this.done / n * 100) : 0; };
+
+  var api = { Staple: Staple, Cut: Cut, Caulk: Caulk, Kanna: Kanna, Crank: Crank, STAPLE: STAPLE, CUT: CUT, CAULK: CAULK, KANNA: KANNA, CRANK: CRANK, flowerR: flowerR, IDLE_MS: IDLE_MS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.GZTools = api;
 })(typeof window !== 'undefined' ? window : globalThis);
