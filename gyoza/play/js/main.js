@@ -823,25 +823,73 @@
       var e = ease(a * 2.2), yy = p.y - 46 * e; c.globalAlpha = a < 0.7 ? 1 : 1 - (a - 0.7) / 0.3; c.font = (JA ? '80px ' : '70px ') + FONT_POP; c.lineWidth = 14; c.strokeStyle = PAPER; c.strokeText(p.text, clamp(p.x, 150, W - 150), yy); c.fillStyle = p.col; c.fillText(p.text, clamp(p.x, 150, W - 150), yy); }
     c.globalAlpha = 1;
   }
-  var GLY = {};
-  function gradeGlyph(g) {                            // 字の形(白 + 透明)→ 外の 黒い にじみ + 縁の色 + 段の色。1 回だけ 焼く
-    if (GLY[g]) return GLY[g];
-    var im = img['grade_' + g], G = GR[g], pad = 26, cv = mk(im.width + pad * 2, im.height + pad * 2), c = cv.getContext('2d');
-    function tint(col) { var t = mk(im.width, im.height), tc = t.getContext('2d'); tc.drawImage(im, 0, 0); tc.globalCompositeOperation = 'source-in'; tc.fillStyle = col; tc.fillRect(0, 0, t.width, t.height); return t; }
-    var dark = tint('rgba(28,12,6,.5)'), edge = tint(G[3]), fill = tint(G[2]), i, a;
-    for (i = 0; i < 24; i++) { a = i / 24 * 6.283; c.drawImage(dark, pad + Math.cos(a) * 22, pad + Math.sin(a) * 22); }
-    for (i = 0; i < 24; i++) { a = i / 24 * 6.283; c.drawImage(edge, pad + Math.cos(a) * 12, pad + Math.sin(a) * 12); }
-    c.drawImage(fill, pad, pad); cv.h0 = im.height; cv.pad = pad; return (GLY[g] = cv);
+  // 11-27 11 回目(ユウキさん「もっと光った感じ。音ゲーみたいに 立体的に。ちょっと普通っぽい」): 筆の字の形はそのまま、
+  // 金属の色(優 = 金 → 朱 / 良 = 金 / 可 = 銀 / 不可 = くすんだ鉄 + ひび)+ 面取り(左上に光・右下に影)+ 太い黒の縁 + 色の光。焼くのは 1 回だけ、動きは 光の帯・火花・揺れ だけ
+  var GLY = {}, GWORD = {}, GSCR = null, RM = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  var GSTY = {
+    S: { fill: [[0, '#fffbe0'], [0.26, '#ffdc4e'], [0.52, '#ff9420'], [0.78, '#e2261a'], [1, '#8a0b08']], glow: 'rgba(255,160,30,1)', line: '#2a0804', wfill: [[0, '#fffbe0'], [0.45, '#ffd84a'], [1, '#e2561a']] },
+    A: { fill: [[0, '#fffdf2'], [0.32, '#ffe58a'], [0.68, '#f2ab24'], [1, '#93560a']], glow: 'rgba(255,196,70,.85)', line: '#2a1604', wfill: [[0, '#fffdf2'], [0.5, '#ffe27a'], [1, '#e8a021']] },
+    B: { fill: [[0, '#ffffff'], [0.4, '#e3e8ee'], [0.74, '#9ea8b4'], [1, '#56606a']], glow: 'rgba(170,205,240,.6)', line: '#161c22', wfill: [[0, '#ffffff'], [0.55, '#dfe5ec'], [1, '#93a0ad']] },
+    F: { fill: [[0, '#9c968e'], [0.55, '#6a645e'], [1, '#3a3632']], glow: 'rgba(0,0,0,0)', line: '#0e0c0b', wfill: [[0, '#b8b2aa'], [1, '#6a645e']] } };
+  function gstops(c, y0, y1, st) { var gr = c.createLinearGradient(0, y0, 0, y1); st.forEach(function (q) { gr.addColorStop(q[0], q[1]); }); return gr; }
+  function gtint(im, col, w, h) { var t = mk(w || im.width, h || im.height), tc = t.getContext('2d'); tc.drawImage(im, 0, 0); tc.globalCompositeOperation = 'source-in'; tc.fillStyle = col; tc.fillRect(0, 0, t.width, t.height); return t; }
+  function grim(im, sx, sy, col) {                     // 面取りの 片側: 字から 少しずつ ずらした字を 抜くと 縁だけ残る
+    var t = mk(im.width, im.height), tc = t.getContext('2d'); tc.drawImage(im, 0, 0); tc.globalCompositeOperation = 'destination-out';
+    for (var d = 1; d <= 6; d++) tc.drawImage(im, sx * d * 1.3, sy * d * 1.3);
+    tc.globalCompositeOperation = 'source-in'; tc.fillStyle = col; tc.fillRect(0, 0, t.width, t.height); return t;
   }
-  function drawGrade(c, p, ms, a) {                  // 判で 押すように: 0.25 秒で 大きい → 少し傾いて 止まる → 終わりの 3 割で 消える
-    var G = GR[p.g], u = clamp(ms / 250, 0, 1), k = u < 1 ? 1 + 0.75 * Math.pow(1 - u, 3) - 0.12 * Math.sin(u * Math.PI) : 1, tilt = (-0.16 + 0.1 * u) * (p.g === 'F' ? -1 : 1);
-    var x = clamp(p.x, 190, W - 190), y = p.y - 20 * ease(clamp(a * 1.5, 0, 1)), gl = gradeGlyph(p.g), gh = G[0].length > 1 ? 112 : 150, gw = gl.width * gh / gl.h0;
-    c.save(); c.globalAlpha = (a < 0.7 ? 1 : 1 - (a - 0.7) / 0.3) * clamp(ms / 60, 0, 1); c.translate(x, y); c.rotate(tilt); c.scale(k, k);
-    c.textAlign = 'center'; c.textBaseline = 'alphabetic'; c.lineJoin = 'round';
-    c.drawImage(gl, -gw / 2, 6 - gh - gl.pad * gh / gl.h0, gw, gl.height * gh / gl.h0);   // 看板と 同じ 北魏の 筆の字(写真から 切り出した 形を 段の色で 塗る)
-    c.font = '900 40px ' + FONT_UI; if (c.letterSpacing !== undefined) c.letterSpacing = '4px'; c.lineWidth = 10; c.strokeStyle = 'rgba(28,12,6,.75)'; c.strokeText(G[1], 0, 52); c.fillStyle = p.g === 'S' ? '#f3c64b' : '#fff'; c.fillText(G[1], 0, 52);
-    if (c.letterSpacing !== undefined) c.letterSpacing = '0px';
-    var sub = p.combo >= 2 ? T(p.combo + ' 連', p.combo + ' COMBO') : p.why; if (sub) { c.font = '700 34px ' + FONT_UI; c.lineWidth = 8; c.strokeText(sub, 0, 98); c.fillStyle = p.combo >= 2 ? '#fff' : '#f1e6d6'; c.fillText(sub, 0, 98); }
+  function gradeGlyph(g) {
+    if (GLY[g]) return GLY[g];
+    var im = img['grade_' + g], S = GSTY[g], pad = 48, w = im.width, h = im.height, i, a;
+    var f = mk(w, h), fc = f.getContext('2d'); fc.drawImage(im, 0, 0); fc.globalCompositeOperation = 'source-in'; fc.fillStyle = gstops(fc, 0, h, S.fill); fc.fillRect(0, 0, w, h);
+    fc.globalCompositeOperation = 'source-atop';
+    fc.drawImage(grim(im, 1, 1, g === 'F' ? 'rgba(255,255,255,.35)' : 'rgba(255,255,255,.9)'), 0, 0);      // 左上の 光
+    fc.drawImage(grim(im, -1, -1, 'rgba(40,8,0,.6)'), 0, 0);                                                   // 右下の 影
+    var gl = fc.createLinearGradient(0, 0, 0, h * 0.5); gl.addColorStop(0, 'rgba(255,255,255,' + (g === 'F' ? 0.12 : 0.4) + ')'); gl.addColorStop(1, 'rgba(255,255,255,0)'); fc.fillStyle = gl; fc.fillRect(0, 0, w, h * 0.5);   // 上半分の つや
+    if (g === 'F') { var rn = G.rng(77); fc.strokeStyle = 'rgba(15,12,10,.85)'; fc.lineWidth = 4; for (i = 0; i < 7; i++) { var x0 = rn() * w, y0 = rn() * h; fc.beginPath(); fc.moveTo(x0, y0); for (var k = 0; k < 4; k++) { x0 += (rn() - 0.5) * 70; y0 += 20 + rn() * 40; fc.lineTo(x0, y0); } fc.stroke(); } }   // ひび
+    var cv = mk(w + pad * 2, h + pad * 2), c = cv.getContext('2d'), o = mk(w + pad * 2, h + pad * 2), oc = o.getContext('2d'), line = gtint(im, S.line);
+    for (i = 0; i < 28; i++) { a = i / 28 * 6.283; oc.drawImage(line, pad + Math.cos(a) * 13, pad + Math.sin(a) * 13); }   // 太い 黒の縁
+    c.shadowColor = S.glow; c.shadowBlur = 36; c.drawImage(o, 0, 0); if (g === 'S') c.drawImage(o, 0, 0); c.shadowColor = 'transparent';   // 色の光
+    c.drawImage(f, pad, pad); cv.h0 = h; cv.pad = pad; return (GLY[g] = cv);
+  }
+  function gradeWord(g) {                              // 英語の 一語も 同じ 金属の色 + 縁 + 光
+    if (GWORD[g]) return GWORD[g];
+    var S = GSTY[g], txt = GR[g][1], t = mk(10, 10).getContext('2d'); t.font = '900 46px ' + FONT_UI; var tw = t.measureText(txt).width + txt.length * 5, cv = mk(Math.ceil(tw) + 70, 110), c = cv.getContext('2d');
+    c.font = '900 46px ' + FONT_UI; if (c.letterSpacing !== undefined) c.letterSpacing = '5px'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineJoin = 'round';
+    var x = cv.width / 2 + 2, y = 56; c.shadowColor = S.glow; c.shadowBlur = 18; c.lineWidth = 13; c.strokeStyle = S.line; c.strokeText(txt, x, y); c.shadowColor = 'transparent';
+    c.fillStyle = gstops(c, y - 20, y + 20, S.wfill); c.fillText(txt, x, y);
+    c.globalCompositeOperation = 'source-atop'; c.fillStyle = 'rgba(255,255,255,.45)'; c.fillRect(0, y - 22, cv.width, 12); c.fillStyle = 'rgba(60,10,0,.3)'; c.fillRect(0, y + 10, cv.width, 12);
+    return (GWORD[g] = cv);
+  }
+  function drawGrade(c, p, ms, a) {                  // 着地 = 1.4 → 0.95 → 1.0(0.2 秒)→ 光の帯が 横切る(優は 光の筋と 火花)→ 終わりの 3 割で 消える。不可は 揺れる
+    var GG = GR[p.g], gl = gradeGlyph(p.g), gh = GG[0].length > 1 ? 112 : 150, sc = gh / gl.h0, gw = gl.width * sc, gH = gl.height * sc, top = 6 - gh - gl.pad * sc;
+    var k = RM ? 1 : ms < 110 ? 1.4 - 0.45 * ease(ms / 110) : ms < 210 ? 0.95 + 0.05 * ease((ms - 110) / 100) : 1;
+    var sx = (!RM && p.g === 'F' && ms < 340) ? Math.sin(ms / 15) * 13 * (1 - ms / 340) : 0, tilt = p.g === 'F' ? 0.06 : -0.05;
+    var x = clamp(p.x, 200, W - 200) + sx, y = p.y - 18 * ease(clamp(a * 1.5, 0, 1)), al = (a < 0.7 ? 1 : 1 - (a - 0.7) / 0.3) * clamp(ms / 50, 0, 1);
+    c.save(); c.globalAlpha = al; c.translate(x, y); c.rotate(tilt);
+    if (p.g === 'S' && !RM && ms < 650) {             // 後ろの 光の筋(回りながら 伸びて 消える)
+      var r = ms / 650, L = 150 + 230 * ease(Math.min(1, r * 2)); c.save(); c.translate(0, -gh * 0.45); c.rotate(r * 0.6); c.globalCompositeOperation = 'lighter'; c.globalAlpha = al * (1 - r) * 0.85;
+      for (var i = 0; i < 12; i++) { c.rotate(Math.PI / 6); var gr = c.createLinearGradient(0, 0, L, 0); gr.addColorStop(0, 'rgba(255,220,120,.9)'); gr.addColorStop(1, 'rgba(255,140,30,0)'); c.fillStyle = gr; c.beginPath(); c.moveTo(0, -6); c.lineTo(L, -(i % 2 ? 2 : 14)); c.lineTo(L, (i % 2 ? 2 : 14)); c.lineTo(0, 6); c.fill(); }
+      c.restore(); }
+    c.save(); c.scale(k, k);
+    c.drawImage(gl, -gw / 2, top, gw, gH);
+    if (ms < 260) { c.globalCompositeOperation = 'lighter'; c.globalAlpha = al * (1 - ms / 260) * (p.g === 'F' ? 0.15 : 0.55); c.drawImage(gl, -gw / 2, top, gw, gH); c.globalCompositeOperation = 'source-over'; c.globalAlpha = al; }   // 着地の 一瞬の 光
+    if (!RM && p.g !== 'F' && ms > 130 && ms < 620) {  // 光の帯(字の形の中だけ)
+      var im = img['grade_' + p.g]; if (!GSCR) GSCR = mk(8, 8); if (GSCR.width !== gl.width || GSCR.height !== gl.height) { GSCR.width = gl.width; GSCR.height = gl.height; }
+      var s2 = GSCR.getContext('2d'), t2 = (ms - 130) / 490, bx = -160 + t2 * (gl.width + 320); s2.globalCompositeOperation = 'source-over'; s2.clearRect(0, 0, gl.width, gl.height); s2.drawImage(im, gl.pad, gl.pad);
+      s2.globalCompositeOperation = 'source-in'; var bg = s2.createLinearGradient(bx - 110, 0, bx + 110, gl.height * 0.35); bg.addColorStop(0, 'rgba(255,255,255,0)'); bg.addColorStop(0.5, 'rgba(255,255,250,.95)'); bg.addColorStop(1, 'rgba(255,255,255,0)'); s2.fillStyle = bg; s2.fillRect(0, 0, gl.width, gl.height);
+      c.globalCompositeOperation = 'lighter'; c.drawImage(GSCR, -gw / 2, top, gw, gH); c.globalCompositeOperation = 'source-over'; }
+    var wd = gradeWord(p.g), ws = 0.82; c.drawImage(wd, -wd.width * ws / 2, 46 - 56 * ws, wd.width * ws, wd.height * ws);
+    c.restore();
+    if (p.g === 'S' && !RM && ms < 700) {             // 火花(4 つ角の 星が 外へ)
+      var rs = G.rng(Math.floor(p.t0) % 9973 + 1), u = ms / 700; c.globalCompositeOperation = 'lighter';
+      for (var j = 0; j < 12; j++) { var an = rs() * 6.283, dist = (90 + rs() * 120) * ease(Math.min(1, u * 1.6)), sz = (10 + rs() * 12) * (1 - u), px = Math.cos(an) * dist, py = -gh * 0.45 + Math.sin(an) * dist * 0.8;
+        c.fillStyle = 'rgba(255,240,170,' + (0.95 * (1 - u)) + ')'; c.beginPath(); c.moveTo(px, py - sz); c.lineTo(px + sz * 0.22, py - sz * 0.22); c.lineTo(px + sz, py); c.lineTo(px + sz * 0.22, py + sz * 0.22); c.lineTo(px, py + sz); c.lineTo(px - sz * 0.22, py + sz * 0.22); c.lineTo(px - sz, py); c.lineTo(px - sz * 0.22, py - sz * 0.22); c.fill(); }
+      c.globalCompositeOperation = 'source-over'; }
+    var sub = p.combo >= 2 ? T(p.combo + ' 連', p.combo + ' COMBO') : p.why;
+    if (sub) { var cb = p.combo >= 2, fs = cb ? 32 + Math.min(p.combo, 20) * 1.4 : 32; c.font = '900 ' + fs + 'px ' + FONT_UI; c.textAlign = 'center'; c.textBaseline = 'alphabetic'; c.lineJoin = 'round';
+      if (cb) { c.shadowColor = 'rgba(255,180,50,.95)'; c.shadowBlur = 10 + Math.min(p.combo, 20) * 1.3; }
+      c.lineWidth = 9; c.strokeStyle = 'rgba(28,12,6,.85)'; c.strokeText(sub, 0, 96 + fs * 0.3); c.shadowColor = 'transparent'; c.fillStyle = cb ? gstops(c, 96 + fs * 0.3 - fs, 96 + fs * 0.3, GSTY.A.wfill) : '#f1e6d6'; c.fillText(sub, 0, 96 + fs * 0.3); }
     c.restore();
   }
   // 上の帯: 残り時間 / 左 = いくつ できたか(合格の数まで)/ 右 = ドリルの速さの札・破いた数
@@ -1482,6 +1530,7 @@
     get audio() { return AC ? { state: AC.state, rate: AC.sampleRate } : null; }, get drillSnd() { return drillSnd; },
     get settings() { return SET; }, get S() { return S; }, set S(v) { S = v; }, get mini() { return mini; }, cutY: function () { return cutY(); }, smashC: function () { return smashC(); }, sawLine: function () { return sawLine(mini); }, get prog() { return PROG; }, openCard: openCard, boardOpen: boardOpen, toTitle: toTitle,
     tap: function (x, y) { miniDown(now(), { x: x, y: y }); }, kDown: function (id, x, y, mouse) { kannaDown(now(), id, { x: x, y: y }, !!mouse); }, kMove: function (id, x, y) { kannaMove(now(), id, { x: x, y: y }); }, kUp: function (id) { kannaUp(now(), id); }, crankC: function () { return crankC(); }, caulkC: function () { return caulkC(); }, move: function (x, y) { miniMove(now(), { x: x, y: y }); }, lift: function (x, y) { miniUp(now(), { x: x, y: y }); }, get bgm() { return { on: BGM.on, step: BGM.step, layer: BGM.layer, tempo: BGM.tempo, gain: bgmBus ? bgmBus.gain.value : null, sfxGain: sfx ? sfx.gain.value : null }; }, setOpen: setOpen,
+    grade: function (g, x, y, why) { grade(g, x, y, why); },   // 判定の札だけ 出す(見た目の検査用)
     soundLog: soundLog, hapticLog: hapticLog, clockIn: clockIn, press: function () { press(now()); }, release: function () { release(now()); },
     setFake: function (t) { fake = t; lastT = t == null ? performance.now() : t; }, get fake() { return fake; },
     step: function (ms, each) { each = each || 16; for (var e = 0; e < ms - 1e-6; e += each) { fake += Math.min(each, ms - e); frame(fake); } },
