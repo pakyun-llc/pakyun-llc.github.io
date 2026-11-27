@@ -346,6 +346,101 @@
   Crank.prototype.left = function (t) { return this.firstT == null ? this.cfg.time : Math.max(0, this.endT - t); };
   Crank.prototype.flush = function () { var n = this.done + this.snaps; return n ? Math.round(this.done / n * 100) : 0; };
 
-  var api = { Staple: Staple, Cut: Cut, Caulk: Caulk, Kanna: Kanna, Crank: Crank, STAPLE: STAPLE, CUT: CUT, CAULK: CAULK, KANNA: KANNA, CRANK: CRANK, flowerR: flowerR, IDLE_MS: IDLE_MS };
+
+  // ================= 二品目: 金づちで 叩ききゅうり =================
+  // きゅうりに 叩く所(節)が 並ぶ。節を 一回ずつ 叩く = ひびが入る。同じ節を もう一回 = つぶれる(その きゅうりは ぐちゃ)。節の外を 叩く = 空振り(数えない)
+  // 全部の節に ひび = 一本できあがり → 皿へ・次の きゅうり
+  var SMASH = {
+    time: 32000, quota: 8, top: 14, len: 820, reach: 70, good: 26, reset: 380,
+    phases: [ { from: 0, n: 4 }, { from: 16000, n: 6 } ]           // 16 秒: 大将「細かく 叩け」= 節が 6 つ(狭い)
+  };
+  function Smash(seed, cfg) {
+    this.cfg = cfg || SMASH; this.r = rng(seed || 1); this.firstT = null; this.endT = null; this.over = null; this.stage = 0;
+    this.done = 0; this.ruined = 0; this.hits = 0; this.perfect = 0; this.misses = 0; this.log = []; this.readyT = 0; this.cur = null; this.n = 0; this._spawn(0);
+  }
+  Smash.prototype._spawn = function (t) {
+    var k = this.cfg.phases[this.stage].n, L = this.cfg.len, segs = [];
+    for (var i = 0; i < k; i++) { var u = (i + 0.5) / k; segs.push({ u: u + (this.r() - 0.5) * 0.25 / k, hit: 0 }); }
+    this.cur = { id: this.n++, segs: segs, t0: t, result: null };
+  };
+  // c = きゅうりの まん中(舞台の座標)。節の位置 = c.x + (u - 0.5) × len
+  Smash.prototype.spot = function (c, i) { return { x: c.x + (this.cur.segs[i].u - 0.5) * this.cfg.len, y: c.y }; };
+  Smash.prototype.advance = function (t, out) {
+    out = out || []; if (this.over) return out;
+    if (this.firstT == null) { if (t >= IDLE_MS) { this.over = 'idle'; out.push({ type: 'end', t: IDLE_MS, kind: 'idle' }); } return out; }
+    var ns = this.stage + 1;
+    if (ns < this.cfg.phases.length && t >= this.firstT + this.cfg.phases[ns].from && t >= this.readyT && this.cur.segs.every(function (s) { return !s.hit; })) { this.stage = ns; this._spawn(t); out.push({ type: 'stage', t: t, stage: ns }); }
+    if (t >= this.endT) { out.push({ type: 'timeup', t: this.endT }); this.over = this.done >= this.cfg.quota ? 'clear' : 'slow'; out.push({ type: 'end', t: this.endT, kind: this.over }); }
+    return out;
+  };
+  Smash.prototype.ready = function (t) { return t >= this.readyT; };
+  Smash.prototype.tap = function (t, x, y, c) {
+    var out = []; this.advance(t, out); if (this.over || t < this.readyT) return out;
+    if (this.firstT == null) { this.firstT = t; this.endT = t + this.cfg.time; }
+    var best = -1, bd = 1e9;
+    for (var i = 0; i < this.cur.segs.length; i++) { var p = this.spot(c, i), d = Math.hypot(x - p.x, (y - p.y) * 0.8); if (d < bd) { bd = d; best = i; } }
+    var lim = Math.min(this.cfg.reach, this.cfg.len / this.cur.segs.length * 0.5);
+    if (best < 0 || bd > lim) { this.misses++; this.log.push({ grade: 'miss' }); out.push({ type: 'judge', t: t, grade: 'miss', x: x, y: y }); return out; }
+    var sg = this.cur.segs[best];
+    if (sg.hit) {                                                     // 同じ節を もう一回 = つぶれる
+      this.cur.result = 'ruined'; this.ruined++; this.log.push({ grade: 'mush' }); out.push({ type: 'judge', t: t, grade: 'mush', seg: best, d: this.cur });
+      out.push({ type: 'cucumber', t: t, result: 'ruined', d: this.cur }); this.readyT = t + this.cfg.reset + 200; this._spawn(this.readyT); return out;
+    }
+    sg.hit = bd <= this.cfg.good ? 2 : 1; this.hits++; if (sg.hit === 2) this.perfect++;
+    this.log.push({ grade: sg.hit === 2 ? 'perfect' : 'hit' }); out.push({ type: 'judge', t: t, grade: sg.hit === 2 ? 'perfect' : 'hit', seg: best, d: this.cur });
+    if (this.cur.segs.every(function (s) { return s.hit; })) { this.cur.result = 'done'; this.done++; out.push({ type: 'cucumber', t: t, result: 'done', d: this.cur }); this.readyT = t + this.cfg.reset; this._spawn(this.readyT); }
+    return out;
+  };
+  Smash.prototype.left = function (t) { return this.firstT == null ? this.cfg.time : Math.max(0, this.endT - t); };
+  Smash.prototype.flush = function () { var n = this.hits + this.misses; return n ? Math.round(this.perfect / n * 100) : 0; };
+
+  // ================= 七品目: のこぎりで 骨付きスペアリブを 切り分ける =================
+  // 肉の上に 大将が引いた 鉛筆の線(骨の間)。線の上に指を置いて 上下に 往復 = のこぎりが 進む。動かした長さが たまると 切れる。
+  // 線から それて 動かした分が 多いと 切り口が がたがた(数えない)
+  var SAW = {
+    time: 40000, quota: 9, top: 15, reach: 80, off: 48, need: 2200, reset: 420, ragged: 0.35, clean: 0.06, span: 360,
+    phases: [ { from: 0, mult: 1 }, { from: 22000, mult: 1.5 } ]      // 22 秒: 太い骨(1.5 倍 引かないと 切れない)
+  };
+  function Saw(seed, cfg) {
+    this.cfg = cfg || SAW; this.firstT = null; this.endT = null; this.over = null; this.stage = 0;
+    this.done = 0; this.bad = 0; this.perfect = 0; this.log = []; this.readyT = 0; this.cut = null; this.f = null; this.n = 0;
+  }
+  Saw.prototype.need = function () { return this.cfg.need * this.cfg.phases[this.stage].mult; };
+  Saw.prototype.advance = function (t, out) {
+    out = out || []; if (this.over) return out;
+    if (this.firstT == null) { if (t >= IDLE_MS) { this.over = 'idle'; out.push({ type: 'end', t: IDLE_MS, kind: 'idle' }); } return out; }
+    var ns = this.stage + 1;
+    if (ns < this.cfg.phases.length && t >= this.firstT + this.cfg.phases[ns].from && !this.cut) { this.stage = ns; out.push({ type: 'stage', t: t, stage: ns }); }
+    if (t >= this.endT) { this.f = null; out.push({ type: 'timeup', t: this.endT }); this.over = this.done >= this.cfg.quota ? 'clear' : 'slow'; out.push({ type: 'end', t: this.endT, kind: this.over }); }
+    return out;
+  };
+  Saw.prototype.ready = function (t) { return t >= this.readyT; };
+  // L = 線 { x, y0, y1 }(舞台の座標)
+  Saw.prototype.down = function (t, x, y, L) {
+    var out = []; this.advance(t, out); if (this.over || t < this.readyT) return out;
+    if (Math.abs(x - L.x) > this.cfg.reach || y < L.y0 - 60 || y > L.y1 + 60) { out.push({ type: 'miss_start', t: t }); return out; }
+    if (this.firstT == null) { this.firstT = t; this.endT = t + this.cfg.time; }
+    if (!this.cut) this.cut = { len: 0, offLen: 0, t0: t, strokes: 0 };
+    this.f = { x: x, y: y, L: L, dir: 0 }; out.push({ type: 'start', t: t }); return out;
+  };
+  Saw.prototype.move = function (t, x, y) {
+    var out = [], f = this.f, c = this.cut; if (!f || !c || this.over) return out;
+    var dy = y - f.y, dl = Math.abs(dy), dir = dy > 0 ? 1 : dy < 0 ? -1 : 0;
+    if (dir && f.dir && dir !== f.dir) { c.strokes++; out.push({ type: 'stroke', t: t, n: c.strokes }); }
+    if (dir) f.dir = dir;
+    c.len += dl; if (Math.abs(x - f.L.x) > this.cfg.off) c.offLen += dl;
+    f.x = x; f.y = y;
+    if (c.len >= this.need()) {
+      var r = c.offLen / c.len, gr = r <= this.cfg.clean ? 'perfect' : r <= this.cfg.ragged ? 'good' : 'ragged';
+      this.log.push({ grade: gr, r: r, strokes: c.strokes }); if (gr === 'ragged') this.bad++; else { this.done++; if (gr === 'perfect') this.perfect++; }
+      this.cut = null; this.f = null; this.n++; this.readyT = t + this.cfg.reset; out.push({ type: 'judge', t: t, grade: gr, r: r });
+    }
+    return out;
+  };
+  Saw.prototype.up = function (t) { var out = []; this.advance(t, out); this.f = null; return out; };
+  Saw.prototype.progress = function () { return this.cut ? Math.min(1, this.cut.len / this.need()) : 0; };
+  Saw.prototype.left = function (t) { return this.firstT == null ? this.cfg.time : Math.max(0, this.endT - t); };
+  Saw.prototype.flush = function () { return this.log.length ? Math.round(this.perfect / this.log.length * 100) : 0; };
+  var api = { Staple: Staple, Cut: Cut, Caulk: Caulk, Kanna: Kanna, Crank: Crank, Smash: Smash, Saw: Saw, STAPLE: STAPLE, CUT: CUT, CAULK: CAULK, KANNA: KANNA, CRANK: CRANK, SMASH: SMASH, SAW: SAW, flowerR: flowerR, IDLE_MS: IDLE_MS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.GZTools = api;
 })(typeof window !== 'undefined' ? window : globalThis);
