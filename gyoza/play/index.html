@@ -28,7 +28,7 @@ body{font-family:var(--ui);font-weight:500;color:var(--ink);-webkit-user-select:
 /* 題名 = 店の看板: 赤い板に 白の手描き文字。板の内側に 白の線 1 本 */
 #title{top:calc(var(--u)*120 + env(safe-area-inset-top));transition:opacity 200ms var(--ease-out),transform 200ms var(--ease-out)}
 .sign{position:relative;display:table;margin:0 auto;line-height:0}
-/* 題名 = 「ドリル飯店」の 香港風の看板(黒漆の板に 金の 筆の字・かすれ)。絵 = assets/sign.webp(Grok で 下書きの看板を描き直したもの)。板を 店の壁に掛ける影だけ足す */
+/* 題名 = 「ドリル飯店」の看板(中華街の 黄色の照明看板に 赤い 北魏風の筆の字)。絵 = assets/sign.webp(Grok で 下書きの看板を描き直したもの)。板を 店の壁に掛ける影だけ足す */
 #title h1{margin:0;font-size:0;line-height:0}
 #title h1 img{display:block;width:calc(var(--u)*900);height:auto;border-radius:calc(var(--u)*3);transform:rotate(-0.8deg);box-shadow:0 calc(var(--u)*3) calc(var(--u)*3) rgba(0,0,0,.55),calc(var(--u)*6) calc(var(--u)*12) calc(var(--u)*14) rgba(0,0,0,.3)}   /* 壁の梁と同じ 少し右上がり。影は 壁に接した 細い影 + 右下へ 短く(Codex) */
 #title .en-name{display:none;margin-top:calc(var(--u)*12);font-weight:900;font-size:calc(var(--u)*64);letter-spacing:.02em;color:#fff;text-shadow:0 calc(var(--u)*3) calc(var(--u)*8) rgba(20,4,0,.9)}
@@ -159,7 +159,7 @@ html[lang=en] .panel h2{letter-spacing:.04em}
 <body>
 <div id="stage">
   <canvas id="bg"></canvas><canvas id="fx"></canvas>
-  <div id="title" class="txt"><div class="sign"><h1><img src="assets/sign.webp" alt="ドリル飯店" width="1400" height="557"></h1></div><div class="en-name">Drill Diner</div><button id="rank" type="button"><span class="lv"></span><span class="nm"></span><span class="go"></span></button><p></p></div>
+  <div id="title" class="txt"><div class="sign"><h1><img src="assets/sign.webp" alt="ドリル飯店" width="1400" height="440"></h1></div><div class="en-name">Drill Diner</div><button id="rank" type="button"><span class="lv"></span><span class="nm"></span><span class="go"></span></button><p></p></div>
   <div id="boss" class="txt"><span><b></b><i></i></span></div>
   <div id="hint" class="txt"><span></span></div>
   <div id="start"><button id="b-in" class="main"></button><div class="subs"><button id="b-board" class="sub"></button><button id="b-set" class="sub"></button></div></div>
