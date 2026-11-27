@@ -823,12 +823,22 @@
       var e = ease(a * 2.2), yy = p.y - 46 * e; c.globalAlpha = a < 0.7 ? 1 : 1 - (a - 0.7) / 0.3; c.font = (JA ? '80px ' : '70px ') + FONT_POP; c.lineWidth = 14; c.strokeStyle = PAPER; c.strokeText(p.text, clamp(p.x, 150, W - 150), yy); c.fillStyle = p.col; c.fillText(p.text, clamp(p.x, 150, W - 150), yy); }
     c.globalAlpha = 1;
   }
+  var GLY = {};
+  function gradeGlyph(g) {                            // 字の形(白 + 透明)→ 外の 黒い にじみ + 縁の色 + 段の色。1 回だけ 焼く
+    if (GLY[g]) return GLY[g];
+    var im = img['grade_' + g], G = GR[g], pad = 26, cv = mk(im.width + pad * 2, im.height + pad * 2), c = cv.getContext('2d');
+    function tint(col) { var t = mk(im.width, im.height), tc = t.getContext('2d'); tc.drawImage(im, 0, 0); tc.globalCompositeOperation = 'source-in'; tc.fillStyle = col; tc.fillRect(0, 0, t.width, t.height); return t; }
+    var dark = tint('rgba(28,12,6,.5)'), edge = tint(G[3]), fill = tint(G[2]), i, a;
+    for (i = 0; i < 24; i++) { a = i / 24 * 6.283; c.drawImage(dark, pad + Math.cos(a) * 22, pad + Math.sin(a) * 22); }
+    for (i = 0; i < 24; i++) { a = i / 24 * 6.283; c.drawImage(edge, pad + Math.cos(a) * 12, pad + Math.sin(a) * 12); }
+    c.drawImage(fill, pad, pad); cv.h0 = im.height; cv.pad = pad; return (GLY[g] = cv);
+  }
   function drawGrade(c, p, ms, a) {                  // 判で 押すように: 0.25 秒で 大きい → 少し傾いて 止まる → 終わりの 3 割で 消える
     var G = GR[p.g], u = clamp(ms / 250, 0, 1), k = u < 1 ? 1 + 0.75 * Math.pow(1 - u, 3) - 0.12 * Math.sin(u * Math.PI) : 1, tilt = (-0.16 + 0.1 * u) * (p.g === 'F' ? -1 : 1);
-    var x = clamp(p.x, 190, W - 190), y = p.y - 20 * ease(clamp(a * 1.5, 0, 1)), big = G[0].length > 1 ? 150 : 190;
+    var x = clamp(p.x, 190, W - 190), y = p.y - 20 * ease(clamp(a * 1.5, 0, 1)), gl = gradeGlyph(p.g), gh = G[0].length > 1 ? 112 : 150, gw = gl.width * gh / gl.h0;
     c.save(); c.globalAlpha = (a < 0.7 ? 1 : 1 - (a - 0.7) / 0.3) * clamp(ms / 60, 0, 1); c.translate(x, y); c.rotate(tilt); c.scale(k, k);
     c.textAlign = 'center'; c.textBaseline = 'alphabetic'; c.lineJoin = 'round';
-    c.font = big + 'px ' + FONT_POP; c.lineWidth = 26; c.strokeStyle = 'rgba(28,12,6,.55)'; c.strokeText(G[0], 0, 0); c.lineWidth = 14; c.strokeStyle = G[3]; c.strokeText(G[0], 0, 0); c.fillStyle = G[2]; c.fillText(G[0], 0, 0);
+    c.drawImage(gl, -gw / 2, 6 - gh - gl.pad * gh / gl.h0, gw, gl.height * gh / gl.h0);   // 看板と 同じ 北魏の 筆の字(写真から 切り出した 形を 段の色で 塗る)
     c.font = '900 40px ' + FONT_UI; if (c.letterSpacing !== undefined) c.letterSpacing = '4px'; c.lineWidth = 10; c.strokeStyle = 'rgba(28,12,6,.75)'; c.strokeText(G[1], 0, 52); c.fillStyle = p.g === 'S' ? '#f3c64b' : '#fff'; c.fillText(G[1], 0, 52);
     if (c.letterSpacing !== undefined) c.letterSpacing = '0px';
     var sub = p.combo >= 2 ? T(p.combo + ' 連', p.combo + ' COMBO') : p.why; if (sub) { c.font = '700 34px ' + FONT_UI; c.lineWidth = 8; c.strokeText(sub, 0, 98); c.fillStyle = p.combo >= 2 ? '#fff' : '#f1e6d6'; c.fillText(sub, 0, 98); }
@@ -1455,7 +1465,7 @@
   // ---- 起動 ----
   function loop() { frame(now()); requestAnimationFrame(loop); }
   window.addEventListener('resize', layout);
-  Promise.all(['shop', 'kitchen', 'dumpling', 'dumpling_open', 'hand', 'hand_thin', 'hand_torn', 'head', 'drill', 'screw', 'drill_side', 'hand_stapler', 'hand_cutter', 'bg_shumai', 'bg_noodle', 'wok_boil', 'hand_kanna', 'hand_caulk', 'hand_hammer', 'hand_saw', 'cucumber', 'ribs', 'crank_wheel', 'crank_body', 'crank_hand', 'roll', 'staple', 'tofu', 'ruler', 'wrapper', 'shumai_top', 'pork', 'board', 'negipile', 'noodle', 'cucumber_smash', 'pegboard'].map(function (n) { return load(n, 'assets/' + n + '.webp'); }).concat(document.fonts ? [
+  Promise.all(['shop', 'kitchen', 'dumpling', 'dumpling_open', 'hand', 'hand_thin', 'hand_torn', 'head', 'drill', 'screw', 'drill_side', 'hand_stapler', 'hand_cutter', 'bg_shumai', 'bg_noodle', 'wok_boil', 'hand_kanna', 'hand_caulk', 'hand_hammer', 'hand_saw', 'cucumber', 'ribs', 'crank_wheel', 'crank_body', 'crank_hand', 'roll', 'staple', 'tofu', 'ruler', 'wrapper', 'shumai_top', 'pork', 'board', 'negipile', 'noodle', 'cucumber_smash', 'pegboard', 'grade_S', 'grade_A', 'grade_B', 'grade_F'].map(function (n) { return load(n, 'assets/' + n + '.webp'); }).concat(document.fonts ? [
       document.fonts.load('40px "Potta"', 'ドリル飯店ぴたっDrillDiner').catch(function () {}), document.fonts.load('40px "YujiSyuku"', '餃子麻婆豆腐').catch(function () {}),
       Promise.all(['500', '700', '900'].map(function (w) { return document.fonts.load(w + ' 40px "ZenKaku"', '餃子0123Aa'); })).catch(function () {})] : [])).then(function () {
     ['hand', 'hand_thin', 'hand_torn'].forEach(function (n) { spr[n] = bake(img[n], HS, 34, 30); }); spr.drill = bake(img.drill, DRL_F.ds, 30, 34); spr.drill_side = bake(img.drill_side, DRL_S.ds, 30, 34);
