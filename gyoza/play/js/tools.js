@@ -84,76 +84,88 @@
   // ================= 3 面: 金尺に カッターを当てて 干し豆腐を 細切り =================
   // 板の上に 金尺が置いてある。尺の端から端まで 指で 一息に引く = 1 本切れる。
   // 尺から ずれすぎ(DEV_OK を超える)= 斜めに切れて 使えない / 速すぎ(MIN_MS 未満)= ちぎれる / 途中で離す・遅すぎ = 切れていない(やり直し・数えない)
+  // 11-27 12 回目(ユウキさん「切れにくすぎる」「赤い点に指を置いて切ると先端が切れない…UI/UX を考えて」)= 作り直し:
+  //  ・線は 板の 端から端まで(len 600)。印は 板の外(線の 両端の 先)
+  //  ・刃先の 位置で 数える(指 ≠ 刃先。main.js が 指から ずらした 刃先を 渡す)。線から reach 以内の 点だけ 数え、外れても 失敗にしない
+  //  ・何回に 分けて 引いてもよい(離しても 続きから)。両端 snap(12%)以内まで 届いたら 端から端まで 切れた = 1 本
+  //  ・出来は まっすぐさ(線からの いちばん大きい ずれ)と 引いた回数で 決める: 優 = ずれ ≤ devGood かつ 1 回 / 良 = ずれ ≤ devOk / 可 = それより 曲がった(どれも 1 本に 数える)
   var CUT = {
-    time: 36000, quota: 12, top: 22, reach: 90, devOk: 54, devGood: 20, minMs: 160, maxMs: 1300, reset: 420,
-    // 区間: dir = 'h'(横に引く)/ 'v'(縦に引く)/ 'd'(斜め)。len = 尺の長さ(舞台 px)
+    time: 36000, quota: 12, top: 22, reach: 72, devGood: 16, devOk: 34, snap: 0.12, reset: 380,
+    // 区間: dir = 'h'(横に引く)/ 'v'(縦に引く)/ 'd'(斜め)。len = 線の長さ(= 板の幅。舞台 px)
     phases: [
-      { from: 0, dir: 'h', len: 560 },
-      { from: 16000, dir: 'v', len: 520 },              // 幹事「取り分けやすい長さで」→ 板を 90 度回す
-      { from: 28000, dir: 'd', len: 520 }               // 大将「最後は 斜め切りや」→ 尺が 斜め
+      { from: 0, dir: 'h', len: 600 },
+      { from: 16000, dir: 'v', len: 600 },              // 幹事「取り分けやすい長さで」→ 板を 90 度回す
+      { from: 28000, dir: 'd', len: 600 }               // 大将「最後は 斜め切りや」→ 尺が 斜め
     ]
   };
   function Cut(seed, cfg) {
     this.cfg = cfg || CUT; this.r = rng(seed || 1);
     this.firstT = null; this.endT = null; this.over = null; this.stage = 0;
     this.cuts = 0; this.good = 0; this.perfect = 0; this.bad = 0; this.log = [];
-    this.stroke = null; this.readyT = 0; this.n = 0;          // n = いまの区間で 何本目か(尺の位置が ずれていく)
+    this.stroke = null; this.cov = null; this.readyT = 0; this.n = 0;          // cov = いまの線の 切れた範囲(lo〜hi、0〜1)
   }
   Cut.prototype.phase = function () { return this.cfg.phases[this.stage]; };
-  // いまの尺(線分 a → b。中心は 舞台の (540, cy))
+  // いまの線(線分 a → b。中心は 舞台の (540, cy))。板は dir の角度に 回っていて、線は 板の 端から端
   Cut.prototype.line = function (cy) {
     var p = this.phase(), L = p.len / 2, off = ((this.n % 6) - 2.5) * 34, cx = 540, a, b;
     cy = cy || 1300;
     if (p.dir === 'h') { a = { x: cx - L, y: cy + off }; b = { x: cx + L, y: cy + off }; }
-    else if (p.dir === 'v') { a = { x: cx + off, y: cy - L }; b = { x: cx + off, y: cy + L }; }
-    else { var k = Math.SQRT1_2; a = { x: cx - L * k + off * k, y: cy - L * k - off * k }; b = { x: cx + L * k + off * k, y: cy + L * k - off * k }; }
+    else if (p.dir === 'v') { a = { x: cx - off, y: cy - L }; b = { x: cx - off, y: cy + L }; }
+    else { var k = Math.SQRT1_2; a = { x: cx - L * k - off * k, y: cy - L * k + off * k }; b = { x: cx + L * k - off * k, y: cy + L * k + off * k }; }
     return { a: a, b: b };
   };
   Cut.prototype.advance = function (t, out) {
     out = out || []; if (this.over) return out;
     if (this.firstT == null) { if (t >= IDLE_MS) { this.over = 'idle'; out.push({ type: 'end', t: IDLE_MS, kind: 'idle' }); } return out; }
     var ns = this.stage + 1;
-    if (ns < this.cfg.phases.length && t >= this.firstT + this.cfg.phases[ns].from && !this.stroke) { this.stage = ns; this.n = 0; this.readyT = Math.max(this.readyT, this.firstT + this.cfg.phases[ns].from + 700); out.push({ type: 'stage', t: this.firstT + this.cfg.phases[ns].from, stage: ns }); }
+    if (ns < this.cfg.phases.length && t >= this.firstT + this.cfg.phases[ns].from && !this.stroke) { this.stage = ns; this.n = 0; this.cov = null; this.readyT = Math.max(this.readyT, this.firstT + this.cfg.phases[ns].from + 700); out.push({ type: 'stage', t: this.firstT + this.cfg.phases[ns].from, stage: ns }); }
     if (t >= this.endT) {
-      if (this.stroke) { this.stroke = null; out.push({ type: 'judge', t: this.endT, grade: 'cut_short' }); }
-      out.push({ type: 'timeup', t: this.endT }); this.over = this.cuts >= this.cfg.quota ? 'clear' : 'slow'; out.push({ type: 'end', t: this.endT, kind: this.over });
+      this.stroke = null; out.push({ type: 'timeup', t: this.endT }); this.over = this.cuts >= this.cfg.quota ? 'clear' : 'slow'; out.push({ type: 'end', t: this.endT, kind: this.over });
     }
     return out;
   };
   function distSeg(p, a, b) { var vx = b.x - a.x, vy = b.y - a.y, L2 = vx * vx + vy * vy, u = ((p.x - a.x) * vx + (p.y - a.y) * vy) / L2; var cx = a.x + vx * u, cy = a.y + vy * u; return { d: Math.hypot(p.x - cx, p.y - cy), u: u }; }
   Cut.prototype.ready = function (t) { return t >= this.readyT; };
+  Cut.prototype._add = function (t, x, y) {          // 刃先の 1 点: 線の近く(reach 以内)だけ 切れた範囲を 広げる
+    var s = this.stroke, c = this.cov, q = distSeg({ x: x, y: y }, s.L.a, s.L.b); s.pts.push({ x: x, y: y, t: t });
+    if (q.d > this.cfg.reach || q.u < -0.4 || q.u > 1.4) return;
+    var u = Math.max(0, Math.min(1, q.u)); c.lo = Math.min(c.lo, u); c.hi = Math.max(c.hi, u);
+    if (q.u > 0.02 && q.u < 0.98) c.dev = Math.max(c.dev, q.d);
+  };
+  Cut.prototype.score = function () { return this.good + Math.floor(this.bad / 3); };   // 講評は まっすぐな本数で(曲がった 3 本 = 1 本)
+  Cut.prototype.done = function () { var c = this.cov; return !!c && c.lo <= this.cfg.snap && c.hi >= 1 - this.cfg.snap; };
   Cut.prototype.down = function (t, x, y, cy) {
     var out = []; this.advance(t, out); if (this.over) return out;
     if (t < this.readyT) return out;
-    var L = this.line(cy), da = Math.hypot(x - L.a.x, y - L.a.y), db = Math.hypot(x - L.b.x, y - L.b.y), R = this.cfg.reach;
-    if (Math.min(da, db) > R) { out.push({ type: 'miss_start', t: t }); return out; }
+    var L = this.line(cy), q = distSeg({ x: x, y: y }, L.a, L.b);
+    if (q.d > this.cfg.reach * 1.4 || q.u < -0.45 || q.u > 1.45) { out.push({ type: 'miss_start', t: t }); return out; }
     if (this.firstT == null) { this.firstT = t; this.endT = t + this.cfg.time; }
-    var from = da <= db ? L.a : L.b, to = da <= db ? L.b : L.a;
-    this.stroke = { t0: t, from: from, to: to, dev: 0, prog: 0, pts: [{ x: x, y: y, t: t }] };
-    out.push({ type: 'start', t: t, from: from, to: to }); return out;
+    if (!this.cov) this.cov = { lo: 2, hi: -1, dev: 0, strokes: 0, t0: t };
+    this.cov.strokes++;
+    this.stroke = { t0: t, L: L, from: L.a, to: L.b, pts: [] }; this._add(t, x, y);
+    out.push({ type: 'start', t: t, from: L.a, to: L.b }); return out;
   };
   Cut.prototype.move = function (t, x, y) {
     var s = this.stroke; if (!s || this.over) return [];
-    var q = distSeg({ x: x, y: y }, s.from, s.to); s.dev = Math.max(s.dev, q.d); s.prog = Math.max(s.prog, Math.min(1, q.u)); s.pts.push({ x: x, y: y, t: t });
-    return [];
+    this._add(t, x, y);
+    return this.done() ? this._finish(t) : [];
+  };
+  Cut.prototype._finish = function (t) {
+    var c = this.cov, s = this.stroke, gr = c.dev <= this.cfg.devGood && c.strokes <= 1 ? 'perfect' : c.dev <= this.cfg.devOk ? 'good' : 'crooked';
+    this.log.push({ grade: gr, dev: c.dev, dur: t - c.t0, strokes: c.strokes });
+    this.cuts++; if (gr !== 'crooked') this.good++; else this.bad++; if (gr === 'perfect') this.perfect++;
+    this.n++; this.readyT = t + this.cfg.reset; this.cov = null; this.stroke = null;
+    return [{ type: 'judge', t: t, grade: gr, dev: c.dev, dur: t - c.t0, from: s.L.a, to: s.L.b }];
   };
   Cut.prototype.up = function (t, x, y) {
     var out = []; this.advance(t, out); var s = this.stroke; if (!s || this.over) return out;
-    this.move(t, x, y); this.stroke = null;
-    var dur = t - s.t0, reach = Math.hypot(x - s.to.x, y - s.to.y) <= this.cfg.reach, gr;
-    if (!reach) gr = 'cut_short';                                   // 端まで 引いていない = 切れていない(数えない・やり直し)
-    else if (s.dev > this.cfg.devOk) gr = 'crooked';                // 斜めに それた
-    else if (dur < this.cfg.minMs) gr = 'ripped';                   // 速すぎて ちぎれた
-    else if (dur > this.cfg.maxMs) gr = 'cut_short';                // 遅すぎ = ぎこぎこ(数えない)
-    else gr = s.dev <= this.cfg.devGood ? 'perfect' : 'good';
-    this.log.push({ grade: gr, dev: s.dev, dur: dur });
-    if (gr === 'perfect' || gr === 'good') { this.cuts++; this.good++; if (gr === 'perfect') this.perfect++; this.n++; this.readyT = t + this.cfg.reset; }
-    else if (gr === 'crooked' || gr === 'ripped') { this.bad++; this.n++; this.readyT = t + this.cfg.reset + 250; }
-    out.push({ type: 'judge', t: t, grade: gr, dev: s.dev, dur: dur, from: s.from, to: s.to });
+    this._add(t, x, y);
+    if (this.done()) return out.concat(this._finish(t));
+    this.stroke = null; out.push({ type: 'lift', t: t, lo: this.cov.lo, hi: this.cov.hi });      // 途中で 離した = 失敗ではない。続きから 引ける
     return out;
   };
   Cut.prototype.left = function (t) { return this.firstT == null ? this.cfg.time : Math.max(0, this.endT - t); };
-  Cut.prototype.flush = function () { var n = this.log.filter(function (l) { return l.grade !== 'cut_short'; }).length; return n ? Math.round(this.perfect / n * 100) : 0; };
+  Cut.prototype.flush = function () { var n = this.log.length; return n ? Math.round(this.perfect / n * 100) : 0; };
 
 
   // ================= 四品目: コーキングガンで 焼売の皮に 餡を 花の形に 絞る =================

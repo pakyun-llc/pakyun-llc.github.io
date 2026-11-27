@@ -71,10 +71,15 @@
   // 道すじ: 効果音(sfx)と BGM(bgm)を 別々の音量で master へ。設定の 入/切 は それぞれの音量を 0 にするだけ
   var AC = null, master = null, sfx = null, bgmBus = null, noiseBuf = null, soundLog = [], analyser = null, DR = null;
   function audioOn() {
-    if (AC) { if (AC.state === 'suspended') AC.resume(); bgmSync(); return; }
+    if (AC) { if (AC.state !== 'running' && AC.state !== 'closed') AC.resume(); bgmSync(); return; }   // 'interrupted'(電話・画面収録の 切り替え)からも 戻す
     var C = window.AudioContext || window.webkitAudioContext; if (!C) return;
-    AC = new C(); master = AC.createGain(); master.gain.value = 0.6; setTimeout(voiceLoad, 0);
-    var comp = AC.createDynamicsCompressor(); master.connect(comp); comp.connect(AC.destination);
+    // 11-27 12 回目(iPhone の 画面収録で ビリビリ): 大きめの 緩衝(balanced)・端末の 音の速さに 合わせる(アプリが 教えてくれる時)・
+    // 最後は 決めた値の リミッタ(既定の 圧縮器は 自動で +13 dB ほど 持ち上げて 0 dB 近くまで 張り付く)
+    var opt = { latencyHint: 'balanced' }, nsr = window.GZNative && +window.GZNative.sampleRate; if (nsr >= 22050 && nsr <= 96000) opt.sampleRate = nsr;
+    try { AC = new C(opt); } catch (e) { AC = new C(); }
+    master = AC.createGain(); master.gain.value = 0.6; setTimeout(voiceLoad, 0);
+    var comp = AC.createDynamicsCompressor(); comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 12; comp.attack.value = 0.003; comp.release.value = 0.15;
+    var post = AC.createGain(); post.gain.value = 0.8; master.connect(comp); comp.connect(post); post.connect(AC.destination);
     analyser = AC.createAnalyser(); analyser.fftSize = 2048; master.connect(analyser);
     sfx = AC.createGain(); sfx.gain.value = SET.sfx ? 1 : 0; sfx.connect(master);
     bgmBus = AC.createGain(); bgmBus.gain.value = 0; bgmBus.connect(master);
@@ -91,6 +96,13 @@
     DR = { m: m, mg: mg, w: w, wf: wf, wg: wg, ng: ng, lg: lg, lfo: lfo };
     bgmSync();
   }
+  // 音の道を 作り直す(アプリから: 画面収録の 始め / 終わり・出力の 切り替え。ページから: 'interrupted' のあと)。次に 触った時に 鳴りはじめる
+  function audioReset() {
+    if (!AC) return; var old = AC; AC = null; master = sfx = bgmBus = noiseBuf = analyser = DR = null; SQS = PLS = SWS = CUTS = null; VOICE = {}; voiceLoading = false; voiceSrc = null; BGM.on = false;
+    try { old.close(); } catch (e) {}
+    soundLog.push('reset'); audioOn();
+  }
+  window.GZAudioReset = audioReset;
   function soundSync() { if (sfx) sfx.gain.setTargetAtTime(SET.sfx ? 1 : 0, AC.currentTime, 0.02); bgmSync(); }
   // 画面が裏に回ったら 音を止める(スマホで 鳴りっぱなしにしない)
   document.addEventListener('visibilitychange', function () { if (!AC) return; if (document.hidden) AC.suspend(); else if (AC.state === 'suspended') AC.resume(); });
@@ -129,24 +141,70 @@
 
   // ---- BGM(中華風。全部コード。旋律は この遊びのために書いたもの)----
   // 五音(D の 宮商角徵羽 = レ ミ ファ# ラ シ)。古箏っぽい はじき = Karplus-Strong を先に焼いておく / 拍木(木魚)/ 小さな銅鑼 / 二胡っぽい のばし(15 秒から)/ 鈸(30 秒の HI から、テンポも上がる)
-  var BGM = { on: false, next: 0, step: 0, timer: null, tempo: 1, layer: 0, duck: 1, pluck: {}, log: [] };
-  var NOTE = { D2: 73.42, A2: 110, B2: 123.47, E2: 82.41, 'F#2': 92.5, D3: 146.83, E3: 164.81, 'F#3': 185, A3: 220, B3: 246.94, D4: 293.66, E4: 329.63, 'F#4': 369.99, A4: 440, B4: 493.88, D5: 587.33, E5: 659.25, 'F#5': 739.99, A5: 880 };
-  // 8 分音符で 1 小節 8 つ・8 小節で 1 巡。'.' = 休み、'-' = のばす(はじかない)
-  var MEL = ['A4 . B4 A4 F#4 . E4 .', 'D4 . E4 F#4 A4 . - .', 'B4 . D5 B4 A4 . F#4 A4', 'E4 . F#4 E4 D4 . - .',
-    'F#5 . E5 D5 B4 . A4 .', 'B4 D5 B4 A4 F#4 . E4 .', 'D4 E4 F#4 A4 B4 . A4 F#4', 'E4 . - D4 D4 . - .'].map(function (b) { return b.split(' '); });
-  var BASS = [['D2', 'A2'], ['D2', 'A2'], ['B2', 'F#2'], ['A2', 'E2'], ['D2', 'A2'], ['B2', 'F#2'], ['D2', 'B2'], ['A2', 'D2']];
-  var ERHU = ['A4', 'F#4', 'B4', 'E4', 'D5', 'B4', 'A4', 'D4'];
+  var BGM = { on: false, next: 0, step: 0, timer: null, tempo: 1, layer: 0, duck: 1, pluck: {}, log: [], song: 'drill' };
+  // 音名 → Hz(A4 = 440)。'#' と 'b' を 読む
+  var NOTE = {};
+  function hzOf(n) { if (NOTE[n]) return NOTE[n]; var m = /^([A-G])([#b]?)(\d)$/.exec(n); if (!m) return 0; var pc = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0); return (NOTE[n] = 440 * Math.pow(2, (pc + 12 * (+m[3] + 1) - 69) / 12)); }
+  function down8(n) { return n.replace(/\d/, function (o) { return +o - 1; }); }
+  // 11-27 12 回目(ユウキさん「音楽もステージごとに変えてほしい」): 面ごとの 曲。どれも この遊びのために 書いた 旋律(五音の 旋法 = 宮・商・角・徴・羽)。
+  // 8 分音符で 1 小節 8 つ・8 小節で 1 巡。'.' = 休み、'-' = のばす。lead = 主旋律の 楽器(zheng = 古箏 / dizi = 笛子 / pipa = 琵琶の 輪指 / erhu = 二胡)、pad = 15 秒からの のばし、perc = 打ち物
+  function M(a) { return a.map(function (b) { return b.split(' '); }); }
+  var SONGS = {
+    drill: { bpm: 100, lead: 'zheng', pad: 'erhu', perc: 'wood', gong: 64,              // 一品目(ユウキさんが 気に入った 元の曲)= D の 宮
+      mel: M(['A4 . B4 A4 F#4 . E4 .', 'D4 . E4 F#4 A4 . - .', 'B4 . D5 B4 A4 . F#4 A4', 'E4 . F#4 E4 D4 . - .', 'F#5 . E5 D5 B4 . A4 .', 'B4 D5 B4 A4 F#4 . E4 .', 'D4 E4 F#4 A4 B4 . A4 F#4', 'E4 . - D4 D4 . - .']),
+      bass: [['D2', 'A2'], ['D2', 'A2'], ['B2', 'F#2'], ['A2', 'E2'], ['D2', 'A2'], ['B2', 'F#2'], ['D2', 'B2'], ['A2', 'D2']], padN: ['A4', 'F#4', 'B4', 'E4', 'D5', 'B4', 'A4', 'D4'] },
+    smash: { bpm: 112, lead: 'zheng', pad: 'dizi', perc: 'drum', gong: 64, stac: true,   // 叩ききゅうり = G の 徴(ト・イ・ハ・ニ・ホ)。弾む 跳ね
+      mel: M(['G4 . G4 A4 C5 . A4 .', 'D5 . C5 A4 G4 . . .', 'E4 G4 . A4 G4 E4 D4 .', 'E4 . G4 . A4 . . .', 'C5 . D5 E5 D5 C5 A4 .', 'G4 A4 C5 . A4 G4 E4 .', 'D4 E4 G4 A4 G4 E4 D4 E4', 'G4 . . . G3 . . .']),
+      bass: [['G2', 'D3'], ['G2', 'D3'], ['C3', 'G2'], ['E2', 'A2'], ['C3', 'G2'], ['A2', 'E2'], ['D3', 'A2'], ['G2', 'D3']], padN: ['D5', 'G4', 'E5', 'A4', 'G5', 'C5', 'A4', 'G4'] },
+    staple: { bpm: 104, lead: 'dizi', pad: 'erhu', perc: 'wood', gong: 64,              // 三つ留め春巻 = A の 羽(イ・ハ・ニ・ホ・ト)。笛子の 主旋律
+      mel: M(['E5 . D5 C5 A4 . - .', 'C5 D5 E5 . G5 . E5 .', 'D5 . C5 A4 G4 . A4 .', 'C5 . - . A4 . . .', 'A5 . G5 E5 D5 . E5 .', 'G5 E5 D5 C5 A4 . - .', 'C5 D5 E5 G5 E5 D5 C5 D5', 'A4 . - . . . . .']),
+      bass: [['A2', 'E3'], ['C3', 'G2'], ['D3', 'A2'], ['A2', 'E2'], ['A2', 'E3'], ['C3', 'G2'], ['D3', 'G2'], ['A2', 'E2']], padN: ['A4', 'E4', 'G4', 'A4', 'C5', 'A4', 'G4', 'E4'] },
+    cut: { bpm: 92, lead: 'zheng', pad: 'dizi', perc: 'tick', gong: 64,                 // 干し豆腐の細切り = E の 角(ホ・ト・イ・ハ・ニ)。静かに 刻む
+      mel: M(['E4 . G4 . A4 . . .', 'C5 . A4 G4 E4 . . .', 'D4 E4 G4 . A4 . G4 .', 'E4 . . . D4 . . .', 'G4 . A4 . C5 . D5 .', 'E5 . D5 C5 A4 . G4 .', 'A4 G4 E4 D4 E4 . G4 .', 'E4 . . . . . . .']),
+      bass: [['E2', 'B2'], ['A2', 'E2'], ['D2', 'A2'], ['E2', 'B2'], ['C3', 'G2'], ['A2', 'E2'], ['D2', 'A2'], ['E2', 'B2']], padN: ['B4', 'C5', 'A4', 'G4', 'D5', 'E5', 'C5', 'B4'] },
+    caulk: { bpm: 88, lead: 'zheng', pad: 'erhu', perc: 'soft', gong: 32,               // 花焼売(せいろ・飲茶)= F の 宮(ヘ・ト・イ・ハ・ニ)。お茶の時間の ゆったり
+      mel: M(['C5 . A4 . G4 . F4 .', 'G4 A4 C5 . D5 . . .', 'F5 . D5 C5 A4 . G4 .', 'A4 . . . G4 . . .', 'F4 G4 A4 . C5 . A4 .', 'D5 . C5 . A4 G4 F4 .', 'G4 . A4 C5 A4 . G4 .', 'F4 . . . . . . .']),
+      bass: [['F2', 'C3'], ['G2', 'D3'], ['D2', 'A2'], ['F2', 'C3'], ['F2', 'C3'], ['D2', 'A2'], ['C3', 'G2'], ['F2', 'C3']], padN: ['A4', 'D5', 'C5', 'G4', 'A4', 'F4', 'C5', 'A4'] },
+    kanna: { bpm: 108, lead: 'pipa', pad: 'dizi', perc: 'wood', gong: 64,               // 白髪ねぎ = D の 商(ニ・ホ・ト・イ・ハ)。琵琶の 輪指で しゃっしゃっ
+      mel: M(['D5 . C5 A4 G4 . A4 .', 'C5 . D5 . E5 . D5 .', 'A4 G4 E4 . G4 . A4 .', 'D4 . . . E4 . . .', 'G4 A4 C5 . D5 C5 A4 .', 'E5 . D5 C5 D5 . . .', 'C5 A4 G4 E4 G4 A4 C5 .', 'D5 . . . D4 . . .']),
+      bass: [['D2', 'A2'], ['A2', 'E2'], ['C3', 'G2'], ['D2', 'A2'], ['G2', 'D3'], ['A2', 'E2'], ['C3', 'G2'], ['D2', 'A2']], padN: ['A5', 'E5', 'G5', 'D5', 'C6', 'A5', 'G5', 'D5'] },
+    saw: { bpm: 120, lead: 'dizi', pad: 'erhu', perc: 'fest', gong: 32,                 // 骨付きスペアリブ(揚げ場・宴会)= Bb の 宮。にぎやかに 太鼓と 鈸
+      mel: M(['F5 . F5 G5 F5 D5 C5 .', 'D5 . F5 . G5 . . .', 'Bb5 . G5 F5 D5 . C5 .', 'D5 C5 Bb4 . C5 . . .', 'F5 G5 Bb5 . G5 F5 D5 .', 'C5 . D5 F5 D5 C5 Bb4 .', 'G4 Bb4 C5 D5 F5 . D5 C5', 'Bb4 . . . Bb4 . . .']),
+      bass: [['Bb2', 'F2'], ['G2', 'D3'], ['Eb3', 'Bb2'], ['F2', 'C3'], ['Bb2', 'F2'], ['G2', 'D3'], ['C3', 'F2'], ['Bb2', 'F2']], padN: ['D5', 'Bb4', 'G5', 'F5', 'D5', 'C5', 'Eb5', 'D5'] },
+    crank: { bpm: 126, lead: 'erhu', pad: 'dizi', perc: 'drama', gong: 16,              // 葱そば(大将の 一杯 = 料理長の 試験)= A の 羽。二胡が 引っぱる 山場
+      mel: M(['A4 . . C5 E5 . D5 .', 'C5 . A4 . G4 . . .', 'A4 . C5 . D5 E5 G5 .', 'E5 . . . D5 . . .', 'A5 . G5 E5 D5 . E5 .', 'G5 . E5 D5 C5 . A4 .', 'C5 D5 E5 G5 A5 . G5 E5', 'A5 . . . A4 . . .']),
+      bass: [['A2', 'E2'], ['F2', 'C3'], ['D2', 'A2'], ['E2', 'B2'], ['A2', 'E2'], ['C3', 'G2'], ['D2', 'E2'], ['A2', 'E2']], padN: ['E5', 'C5', 'D5', 'E5', 'A5', 'G5', 'E5', 'A5'] }
+  };
+  function bgmSong(k) { k = SONGS[k] ? k : 'drill'; if (BGM.song === k) return; BGM.song = k; BGM.step = 0; BGM.pluck = {}; BGM.next = 0; }   // 曲を 替えると 頭から(弦の 焼き置きも 捨てる = 持ち歩く 量を 増やさない)
   function ksBuf(f) {                                  // はじいた弦(Karplus-Strong)。1.6 秒
     var sr = AC.sampleRate, n = Math.floor(sr * 1.6), N = Math.max(2, Math.round(sr / f)), b = AC.createBuffer(1, n, sr), d = b.getChannelData(0), i, damp = f > 400 ? 0.994 : 0.997;
     for (i = 0; i < N; i++) d[i] = (Math.random() * 2 - 1) * (0.6 + 0.4 * Math.sin(Math.PI * i / N));
     for (i = N; i < n; i++) d[i] = damp * (0.62 * d[i - N] + 0.38 * d[i - N + 1]);
     return b;
   }
-  function pluck(name, t, peak, bend) {
-    var b = BGM.pluck[name] || (BGM.pluck[name] = ksBuf(NOTE[name])), s = AC.createBufferSource(), g = AC.createGain(), f = AC.createBiquadFilter();
-    s.buffer = b; f.type = 'lowpass'; f.frequency.value = 3800; g.gain.value = peak;
+  function pluck(name, t, peak, bend, len) {             // 1 音 = 3 ノード(焼いた弦 + 帯 + 音量)
+    var b = BGM.pluck[name] || (BGM.pluck[name] = ksBuf(hzOf(name))), s = AC.createBufferSource(), g = AC.createGain(), f = AC.createBiquadFilter(), L = len || 1.6;
+    s.buffer = b; f.type = 'lowpass'; f.frequency.value = 3800; g.gain.setValueAtTime(peak, t);
+    if (len) g.gain.setTargetAtTime(0.0001, t + len * 0.6, len * 0.25);
     if (bend) { s.playbackRate.setValueAtTime(1, t + 0.18); s.playbackRate.linearRampToValueAtTime(1.06, t + 0.34); s.playbackRate.linearRampToValueAtTime(1, t + 0.6); }   // 古箏の 押し(音を ゆらす)
-    s.connect(f); f.connect(g); g.connect(bgmBus); s.start(t); s.stop(t + 1.6);
+    s.connect(f); f.connect(g); g.connect(bgmBus); s.start(t); s.stop(t + L);
+  }
+  function pipa(name, t, dur, peak) {                    // 琵琶の 輪指 = 三角波の 音量を 速く 揺らす(1 音 = 4 ノード)
+    var o = AC.createOscillator(), g = AC.createGain(), l = AC.createOscillator(), lg = AC.createGain(), f = hzOf(name);
+    o.type = 'triangle'; o.frequency.value = f; l.type = 'square'; l.frequency.value = 13; lg.gain.value = peak * 0.45;
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak * 0.55, t + 0.01); g.gain.setTargetAtTime(0.0001, t + dur * 0.8, dur * 0.15);
+    l.connect(lg); lg.connect(g.gain); o.connect(g); g.connect(bgmBus); o.start(t); l.start(t); o.stop(t + dur + 0.2); l.stop(t + dur + 0.2);
+  }
+  function dizi(name, t, dur, peak) {                    // 笛子 = 正弦 + 少しの 三角 + ビブラート(1 音 = 5 ノード)
+    var o = AC.createOscillator(), o2 = AC.createOscillator(), g = AC.createGain(), v = AC.createOscillator(), vg = AC.createGain(), f = hzOf(name);
+    o.type = 'sine'; o2.type = 'triangle'; o.frequency.value = f; o2.frequency.value = f * 2; v.frequency.value = 5.8; vg.gain.setValueAtTime(0, t); vg.gain.linearRampToValueAtTime(f * 0.01, t + dur * 0.6);
+    v.connect(vg); vg.connect(o.frequency); vg.connect(o2.frequency);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + 0.05); g.gain.setValueAtTime(peak, t + dur * 0.75); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    var g2 = AC.createGain(); g2.gain.value = 0.18; o2.connect(g2); g2.connect(g); o.connect(g); g.connect(bgmBus); o.start(t); o2.start(t); v.start(t); o.stop(t + dur + 0.05); o2.stop(t + dur + 0.05); v.stop(t + dur + 0.05);
+  }
+  function drum(t, peak, lo) {                           // 小さな 太鼓(堂鼓)= 正弦の 音程 落とし
+    var o = AC.createOscillator(), g = AC.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(lo ? 110 : 170, t); o.frequency.exponentialRampToValueAtTime(lo ? 55 : 90, t + 0.12);
+    env(g, t, 0.003, peak, 0.16); o.connect(g); g.connect(bgmBus); o.start(t); o.stop(t + 0.22);
   }
   function woodblock(t, peak, hi) {
     var o = AC.createOscillator(), g = AC.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(hi ? 1250 : 880, t); o.frequency.exponentialRampToValueAtTime(hi ? 1100 : 760, t + 0.06);
@@ -157,26 +215,39 @@
     env(g, t, 0.003, peak, 0.22); s.connect(f); f.connect(g); g.connect(bgmBus); s.start(t, Math.random()); s.stop(t + 0.3);
   }
   function erhu(t, from, to, dur, peak) {                // のこぎり波を 帯域で絞って ビブラート、前の音から すべって入る
-    var o = AC.createOscillator(), f = AC.createBiquadFilter(), g = AC.createGain(), v = AC.createOscillator(), vg = AC.createGain();
-    o.type = 'sawtooth'; o.frequency.setValueAtTime(NOTE[from] || NOTE[to], t); o.frequency.exponentialRampToValueAtTime(NOTE[to], t + 0.14);
-    v.frequency.value = 5.4; vg.gain.setValueAtTime(0, t); vg.gain.linearRampToValueAtTime(NOTE[to] * 0.012, t + dur * 0.5); v.connect(vg); vg.connect(o.frequency);
-    f.type = 'bandpass'; f.frequency.value = NOTE[to] * 2.2; f.Q.value = 1.1;
+    var o = AC.createOscillator(), f = AC.createBiquadFilter(), g = AC.createGain(), v = AC.createOscillator(), vg = AC.createGain(), ft = hzOf(to);
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(hzOf(from) || ft, t); o.frequency.exponentialRampToValueAtTime(ft, t + 0.14);
+    v.frequency.value = 5.4; vg.gain.setValueAtTime(0, t); vg.gain.linearRampToValueAtTime(ft * 0.012, t + dur * 0.5); v.connect(vg); vg.connect(o.frequency);
+    f.type = 'bandpass'; f.frequency.value = ft * 2.2; f.Q.value = 1.1;
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + 0.18); g.gain.setValueAtTime(peak, t + dur * 0.7); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(f); f.connect(g); g.connect(bgmBus); o.start(t); v.start(t); o.stop(t + dur + 0.05); v.stop(t + dur + 0.05);
   }
+  function noteLen(mel, bar, k) { var n = 1; for (var j = k + 1; j < 8 && mel[bar][j] === '-'; j++) n++; return n; }   // '-' の 数だけ のばす
   function bgmTick() {
     if (!AC || AC.state !== 'running' || !BGM.on) return;
-    var e8 = 60 / (100 * BGM.tempo) / 2;               // 8 分音符(100 BPM。HI で 1.2 倍)
+    var S = SONGS[BGM.song] || SONGS.drill, e8 = 60 / (S.bpm * BGM.tempo) / 2;   // 8 分音符(HI で 1.2 倍)
     if (BGM.next < AC.currentTime) BGM.next = AC.currentTime + 0.05;
     while (BGM.next < AC.currentTime + 0.15) {
-      var t = BGM.next, s = BGM.step % 64, bar = Math.floor(s / 8), k = s % 8, n = MEL[bar][k];
-      if (n !== '.' && n !== '-') { pluck(n, t, 0.5, k === 0 && bar % 2 === 1); if (k % 2 === 0) pluck(n.replace(/\d/, function (o) { return +o - 1; }), t + 0.012, 0.16); }
-      if (k === 0) pluck(BASS[bar][0], t, 0.42); if (k === 4) pluck(BASS[bar][1], t, 0.34);
-      if (k === 2 || k === 6) woodblock(t, 0.1, false);
-      if (BGM.layer >= 2 && k % 2 === 1) woodblock(t, 0.05, true);
+      var t = BGM.next, s = BGM.step % 64, bar = Math.floor(s / 8), k = s % 8, n = S.mel[bar][k], prev = S.mel[bar][k - 1] || S.mel[(bar + 7) % 8][7];
+      if (n !== '.' && n !== '-') {
+        var L = noteLen(S.mel, bar, k) * e8;
+        if (S.lead === 'zheng') { pluck(n, t, 0.5, k === 0 && bar % 2 === 1, S.stac ? e8 * 1.6 : 0); if (k % 2 === 0) pluck(down8(n), t + 0.012, 0.16, false, S.stac ? e8 * 1.6 : 0); }
+        else if (S.lead === 'dizi') dizi(n, t, Math.max(L, e8 * 0.9), 0.16);
+        else if (S.lead === 'pipa') pipa(n, t, Math.max(L, e8 * 0.9), 0.22);
+        else if (S.lead === 'erhu') erhu(t, prev && prev.length > 1 ? prev : n, n, Math.max(L, e8 * 1.1), 0.12);
+      }
+      if (k === 0) pluck(S.bass[bar][0], t, 0.42); if (k === 4) pluck(S.bass[bar][1], t, 0.34);
+      var P = S.perc;
+      if (P === 'wood' && (k === 2 || k === 6)) woodblock(t, 0.1, false);
+      if (P === 'tick' && k % 4 === 2) woodblock(t, 0.06, true);
+      if (P === 'soft' && k === 4) woodblock(t, 0.06, false);
+      if (P === 'drum') { if (k === 0 || k === 4) drum(t, 0.3, true); if (k === 6) drum(t, 0.18, false); if (k === 2) woodblock(t, 0.08, false); }
+      if (P === 'fest') { if (k % 2 === 0) drum(t, k % 4 === 0 ? 0.3 : 0.18, k % 4 === 0); if (k === 4) cymbal(t, 0.04); if (k % 2 === 1) woodblock(t, 0.05, true); }
+      if (P === 'drama') { if (k === 0 || k === 3 || k === 6) drum(t, 0.32, true); if (k === 4) drum(t, 0.2, false); if (k % 2 === 1) woodblock(t, 0.04, true); }
+      if (BGM.layer >= 2 && k % 2 === 1 && P !== 'fest' && P !== 'drama') woodblock(t, 0.05, true);
       if (BGM.layer >= 2 && (k === 0 || k === 4)) cymbal(t, 0.035);
-      if (BGM.layer >= 1 && k === 0) erhu(t, ERHU[(bar + 7) % 8], ERHU[bar], e8 * 7.6, 0.05);
-      if (s === 0) gong(t, 196, 0.05, 2.4, bgmBus);
+      if (BGM.layer >= 1 && k === 0) { var pn = S.padN[bar], pp = S.padN[(bar + 7) % 8]; if (S.pad === 'erhu') erhu(t, pp, pn, e8 * 7.6, 0.05); else dizi(pn, t, e8 * 7.6, 0.06); }
+      if (s % S.gong === 0) gong(t, 196, 0.05, 2.4, bgmBus);
       BGM.log.push(s); if (BGM.log.length > 200) BGM.log.shift();
       BGM.step++; BGM.next += e8;
     }
@@ -408,7 +479,7 @@
   function pop(text, x, y, col) { pops.push({ text: text, x: x, y: y, t0: now(), col: col || INK }); }
   // 判定の 札(11-27 9 回目。ユウキさん「中国語の 可とか良とかの漢字か、英語で クール・グッド・エクセレント みたいな、音ハメゲームの表示みたいに」)
   // 段 = 優(いちばん)/ 良 / 可(ゆるい・それた = 使えるが 甘い)/ 不可(破れ・空振り = 駄目)。漢字 1〜2 字を 判で押すように 出し、下に 英語の 一語。優・良が 続くと 連の数
-  var GR = { S: ['優', 'EXCELLENT', RED, '#f3c64b'], A: ['良', 'GOOD', '#c8611a', PAPER], B: ['可', 'SO-SO', '#857b72', PAPER], F: ['不可', 'MISS', '#4f4943', PAPER] }, combo = 0;
+  var GR = { H: ['高速', 'HIGH SPEED', RED, '#f3c64b'], S: ['優', 'EXCELLENT', RED, '#f3c64b'], A: ['良', 'GOOD', '#c8611a', PAPER], B: ['可', 'SO-SO', '#857b72', PAPER], F: ['不可', 'MISS', '#4f4943', PAPER] }, combo = 0;
   function grade(g, x, y, why) { if (g === 'S' || g === 'A') combo++; else combo = 0; pops = pops.filter(function (q) { return !q.g; }); pops.push({ g: g, why: why || '', combo: combo, x: x, y: y, t0: now() }); }
   function puff(x, y, n, sp) { for (var i = 0; i < n; i++) { var a = Math.random() * 6.283, v = sp * (0.3 + Math.random()); parts.push({ k: 'flour', x: x, y: y, vx: Math.cos(a) * v, vy: Math.sin(a) * v * 0.5 - 20, r: 8 + Math.random() * 16, t0: now(), life: 420 + Math.random() * 300 }); } }
   function burst(x, y) {
@@ -464,7 +535,7 @@
       goal: ['3 か所 留めた春巻', 'Rolls stapled 3 times'], unit: ['本', ''], quota: 5, best: ['最高 ', 'Best '] },
     { kind: 'cut', bg: 'kitchen', no: ['四品目', 'Order 4'], dish: ['干し豆腐の細切り', 'Shredded Tofu Skin'], tool: ['カッターと金尺', 'Knife & steel rule'], take: ['カッターを持つ', 'Grab the knife'],
       who: ['幹事', 'Party host'], line: ['冷菜も 味見させて。細く まっすぐ 頼むよ', 'Let me taste a cold dish too. Thin and straight, please.'],
-      how: ['金尺に沿って 端から端まで 一息に なぞる', 'Swipe along the steel rule, end to end, in one go.'],
+      how: ['赤い輪に 指を置いて、点線を 反対の輪まで なぞる(途中で 離しても 続きから)', 'Put your finger on a red ring and trace the dotted line to the other ring (you can lift and continue).'],
       goal: ['まっすぐな細切り', 'Straight strips'], unit: ['本', ''], quota: 12, best: ['最高 ', 'Best '] },
     // 11-27: 宴会の当日(土曜・六名)。四〜六品目 + 大将の 最後の一言(料理長へ)
     { kind: 'caulk', bg: 'shumai', no: ['五品目', 'Order 5'], dish: ['花焼売', 'Flower Shumai'], tool: ['コーキングガン', 'Caulking gun'], take: ['コーキングガンを持つ', 'Grab the caulking gun'],
@@ -516,7 +587,7 @@
   function toTitle() {
     st = 'TITLE'; nativeScreen('title'); mini = null; game = new G.Game(1); vis = {}; vis[0] = { inT: -1000 }; tray = []; boil = null; endKind = null; S = Math.max(0, nextStage());
     resEl.classList.remove('on'); cardEl.classList.remove('on'); titleEl.classList.remove('off'); startEl.classList.remove('off'); hintEl.classList.remove('on'); bossEl.classList.remove('on');
-    fillTitle(); drawBg(); bgmLayer(0);
+    fillTitle(); drawBg(); bgmLayer(0); bgmSong('drill');
   }
 
   // ---- 伝票(面の前): 何を・何で・誰の注文か・どう動かすか・いくつ ----
@@ -554,7 +625,7 @@
     runs++; seed = +(Q.get('seed') || 0) || (Math.floor(Math.random() * 1e9) + 1);
     T0 = now(); parts = []; pops = []; combo = 0; leaving = []; stains = []; tray = []; boil = null; endKind = null; mini = null; hiFlash = -1e9;
     cardEl.classList.remove('on'); resEl.classList.remove('on'); startEl.classList.add('off'); titleEl.classList.add('off'); bossEl.classList.remove('on'); bgmLayer(0);
-    var D = STG[S];
+    var D = STG[S]; bgmSong(D.kind);
     hintEl.firstChild.textContent = T(D.how[0], D.how[1]); hintEl.classList.add('on');
     if (D.kind === 'drill') {
       game = new G.Game(seed); vis = {}; vis[0] = { inT: now() - 1000 };
@@ -599,14 +670,14 @@
     big.className = ''; promoFrom = -1; $('r-promo').textContent = '';
     if (D.kind === 'drill') { c = game.closed; stat = [T('分速 ' + game.perMin() + ' コ', game.perMin() + '/min'), T('ぴたっ ' + game.flush() + '%', 'Flush ' + game.flush() + '%'), T('開いた ' + game.opened + ' コ', 'Burst ' + game.opened)]; }
     else if (D.kind === 'staple') { c = mini.g.closed; stat = [T('ぴたっ ' + mini.g.flush() + '%', 'Dead-on ' + mini.g.flush() + '%'), T('はみ出た ' + mini.g.spoiled + ' 本', 'Burst ' + mini.g.spoiled)]; }
-    else if (D.kind === 'cut') { c = mini.g.cuts; stat = [T('ぴたっ ' + mini.g.flush() + '%', 'Dead-straight ' + mini.g.flush() + '%'), T('失敗 ' + mini.g.bad + ' 本', 'Ruined ' + mini.g.bad)]; }
+    else if (D.kind === 'cut') { c = mini.g.cuts; stat = [T('ぴたっ ' + mini.g.flush() + '%', 'Dead-straight ' + mini.g.flush() + '%'), T('曲がった ' + mini.g.bad + ' 本', 'Crooked ' + mini.g.bad)]; }
     else if (D.kind === 'smash') { c = mini.g.done; stat = [T('ぴたっ ' + mini.g.flush() + '%', 'Dead-on ' + mini.g.flush() + '%'), T('つぶした ' + mini.g.ruined + ' 本', 'Mushed ' + mini.g.ruined)]; }
     else if (D.kind === 'saw') { c = mini.g.done; stat = [T('ぴたっ ' + mini.g.flush() + '%', 'Clean ' + mini.g.flush() + '%'), T('がたがた ' + mini.g.bad + ' 本', 'Ragged ' + mini.g.bad)]; }
     else if (D.kind === 'crank') { c = mini.g.done; stat = [T('切れた ' + mini.g.snaps + ' 回', 'Snapped ' + mini.g.snaps), T('大将の分 ' + mini.g.chefDone + ' 口', "Chef's bites " + mini.g.chefDone)]; }
     else { c = mini.g.good; stat = [T('ぴたっ ' + mini.g.flush() + '%', 'Perfect ' + mini.g.flush() + '%'), T('失敗 ' + mini.g.bad, 'Ruined ' + mini.g.bad)]; }
     $('r-head').textContent = T('本日の品書き', "Today's menu");
     if (k === 'clear') {
-      var ri = G.rank(c, D.quota, D.kind === 'drill' ? 0 : mini.g.cfg.top), r = crit(D.kind, ri); $('r-dish').textContent = T(D.dish[0], D.dish[1]); $('r-label').textContent = T(LABEL[D.kind][0], LABEL[D.kind][1]); big.innerHTML = c + u;
+      var ri = G.rank(D.kind === 'cut' ? mini.g.score() : c, D.quota, D.kind === 'drill' ? 0 : mini.g.cfg.top), r = crit(D.kind, ri); $('r-dish').textContent = T(D.dish[0], D.dish[1]); $('r-label').textContent = T(LABEL[D.kind][0], LABEL[D.kind][1]); big.innerHTML = c + u;
       rk.textContent = T(r[0], r[1]); $('r-line').textContent = T(CHEF[ri][0], CHEF[ri][1]); voice('rank' + (ri + 1)); setStat(stat); play('clear'); play('gong'); haptic('clear');
       if (S === 0) { menuHung = true; drawBg(); }       // 壁の右端の黄色い短冊に「ネジ水餃子 時価」が 書き足される
       if (c > PROG.best[S]) PROG.best[S] = c;
@@ -827,6 +898,7 @@
   // 金属の色(優 = 金 → 朱 / 良 = 金 / 可 = 銀 / 不可 = くすんだ鉄 + ひび)+ 面取り(左上に光・右下に影)+ 太い黒の縁 + 色の光。焼くのは 1 回だけ、動きは 光の帯・火花・揺れ だけ
   var GLY = {}, GWORD = {}, GSCR = null, RM = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
   var GSTY = {
+    H: { fill: [[0, '#fffbe0'], [0.26, '#ffdc4e'], [0.52, '#ff9420'], [0.78, '#e2261a'], [1, '#8a0b08']], glow: 'rgba(255,120,30,1)', line: '#2a0804', wfill: [[0, '#fffbe0'], [0.45, '#ffd84a'], [1, '#e2561a']] },   // 「高速」の 判(優と 同じ 金 → 朱)
     S: { fill: [[0, '#fffbe0'], [0.26, '#ffdc4e'], [0.52, '#ff9420'], [0.78, '#e2261a'], [1, '#8a0b08']], glow: 'rgba(255,160,30,1)', line: '#2a0804', wfill: [[0, '#fffbe0'], [0.45, '#ffd84a'], [1, '#e2561a']] },
     A: { fill: [[0, '#fffdf2'], [0.32, '#ffe58a'], [0.68, '#f2ab24'], [1, '#93560a']], glow: 'rgba(255,196,70,.85)', line: '#2a1604', wfill: [[0, '#fffdf2'], [0.5, '#ffe27a'], [1, '#e8a021']] },
     B: { fill: [[0, '#ffffff'], [0.4, '#e3e8ee'], [0.74, '#9ea8b4'], [1, '#56606a']], glow: 'rgba(170,205,240,.6)', line: '#161c22', wfill: [[0, '#ffffff'], [0.55, '#dfe5ec'], [1, '#93a0ad']] },
@@ -838,6 +910,8 @@
     for (var d = 1; d <= 6; d++) tc.drawImage(im, sx * d * 1.3, sy * d * 1.3);
     tc.globalCompositeOperation = 'source-in'; tc.fillStyle = col; tc.fillRect(0, 0, t.width, t.height); return t;
   }
+  var WGL = {};
+  function whiteGlyph(n) { return WGL[n] || (WGL[n] = gtint(img[n], '#fff')); }   // 札の中の 白い 筆の字
   function gradeGlyph(g) {
     if (GLY[g]) return GLY[g];
     var im = img['grade_' + g], S = GSTY[g], pad = 48, w = im.width, h = im.height, i, a;
@@ -909,10 +983,15 @@
     if (D.kind !== 'drill') return;
     // ドリルの速さの札: 低速 / 高速 ×1.5(30 秒で 店が開くと 変わる。回している途中なら「次から高速」)
     var hiNow = game.gear() > 1, curHi = game.phase === 'drill' ? game.g0 > 1 : hiNow, pend = hiNow && !curHi;
-    var lt = curHi ? T('高速 ×1.5', 'HIGH ×1.5') : pend ? T('次から高速', 'HIGH next') : T('低速', 'LOW');
-    c.font = '900 38px ' + FONT_UI; var lw = c.measureText(lt).width + 56, lx = 1026 - lw;
+    // 11-27 12 回目(ユウキさん「高速っていう文字が合ってない」): 日本語は 「低」「高」「速」を 看板の 筆の字(白)で、「×1.5」「次から」は 画面の ゴシック
+    var gl = JA ? (curHi ? ['g_kou', 'g_soku'] : pend ? ['g_kou', 'g_soku'] : ['g_tei', 'g_soku']) : null, pre = JA && pend ? '次から' : '', post = curHi ? ' ×1.5' : '';
+    var lt = curHi ? 'HIGH ×1.5' : pend ? 'HIGH next' : 'LOW', GH = 42;
+    c.font = '900 38px ' + FONT_UI; var gw2 = gl ? gl.reduce(function (a, n) { return a + img[n].width * GH / img[n].height + 4; }, 0) : 0;
+    var lw = (gl ? c.measureText(pre + post).width + gw2 : c.measureText(lt).width) + 56, lx = 1026 - lw;
     c.fillStyle = curHi ? RED : pend ? (Math.floor(tn / 180) % 2 ? RED : 'rgba(28,12,6,.74)') : 'rgba(28,12,6,.74)'; rr(c, lx, y + 36, lw, 60, 30); c.fill();
-    c.fillStyle = '#fff'; c.textAlign = 'center'; c.fillText(lt, lx + lw / 2, y + 68);
+    c.fillStyle = '#fff';
+    if (gl) { var cx2 = lx + 28; c.textAlign = 'left'; if (pre) { c.fillText(pre, cx2, y + 68); cx2 += c.measureText(pre).width; } gl.forEach(function (n) { var wg = whiteGlyph(n), ww = wg.width * GH / wg.height; c.drawImage(wg, cx2, y + 66 - GH / 2, ww, GH); cx2 += ww + 4; }); if (post) c.fillText(post, cx2, y + 68); }
+    else { c.textAlign = 'center'; c.fillText(lt, lx + lw / 2, y + 68); }
     // 破いた数(3 つで 没収)
     for (i = 0; i < game.TEARS; i++) { var px = lx - 40 - i * 40, py = y + 66; c.fillStyle = i < game.tears ? RED : 'rgba(28,12,6,.5)'; c.beginPath(); c.arc(px, py, 14, 0, 7); c.fill(); if (i < game.tears) { c.strokeStyle = PAPER; c.lineWidth = 4; c.beginPath(); c.moveTo(px - 7, py - 7); c.lineTo(px + 7, py + 7); c.moveTo(px + 7, py - 7); c.lineTo(px - 7, py + 7); c.stroke(); } }
     // 店が開いた瞬間: 真ん中に「高速」の判(1.4 秒)
@@ -920,8 +999,8 @@
     if (ha >= 0 && ha < 1) {
       var sc = ha < 0.15 ? lerp(1.6, 1, ease(ha / 0.15)) : 1, al = ha < 0.75 ? 1 : 1 - (ha - 0.75) / 0.25;
       c.save(); c.globalAlpha = al; c.translate(540, H * 0.36); c.scale(sc, sc); c.rotate(-0.06);
-      c.fillStyle = RED; rr(c, -230, -96, 460, 192, 14); c.fill(); c.strokeStyle = '#fff'; c.lineWidth = 6; rr(c, -214, -80, 428, 160, 8); c.stroke();
-      c.fillStyle = '#fff'; c.font = (JA ? '120px ' : '96px ') + FONT_POP; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(T('高速', 'HIGH'), 0, 6);
+      var hg = gradeGlyph('H'), hs = 170 / hg.h0, wd = gradeWord('H');   // 判定の札と 同じ 看板の 筆 + 金 → 朱(日本語・英語 とも 字は 高速、下に HIGH SPEED)
+      c.drawImage(hg, -hg.width * hs / 2, -110 - hg.pad * hs, hg.width * hs, hg.height * hs); c.drawImage(wd, -wd.width * 0.8 / 2, 70 - 56 * 0.8, wd.width * 0.8, wd.height * 0.8);
       c.restore();
     }
   }
@@ -983,6 +1062,8 @@
   // 工具の写真(11-27: 工具は ぜんぶ 写真。工具掛けにも 写真を 掛ける)。mode 0 = 本物 / 1 = 黒い影(まだ)/ 2 = 薄い影(前の注文のあと)
   var TOOLIMG = { drill: 'drill', smash: 'hand_hammer', staple: 'hand_stapler', cut: 'hand_cutter', caulk: 'hand_caulk', kanna: 'hand_kanna', saw: 'hand_saw', crank: 'crank_full' }, SIL = {};
   function toolImg(k) { var n = TOOLIMG[k]; if (n === 'crank_full') { if (!SIL.crank_full) { var a = img.crank_body, cv = mk(a.width, a.height), cc = cv.getContext('2d'); cc.drawImage(img.crank_body, 0, 0); cc.drawImage(img.crank_wheel, 0, 0); cc.drawImage(img.crank_hand, 0, 0); SIL.crank_full = cv; } return SIL.crank_full; }
+    if (n === 'hand_cutter') { if (!SIL.cutter_top) { var cv4 = mk(700, 578); cv4.getContext('2d').drawImage(img.hand_cutter, 0, 0); SIL.cutter_top = cv4; } return SIL.cutter_top; }
+    if (n === 'hand_stapler') { if (!SIL.stapler_top) { var cv3 = mk(760, 1186); cv3.getContext('2d').drawImage(img.hand_stapler, 0, 0); SIL.stapler_top = cv3; } return SIL.stapler_top; }   // 工具掛けには 前と同じ 枠(腕の 描き足しは 切る)
     if (n === 'hand_kanna') { if (!SIL.kanna_top) { var cv2 = mk(1000, 520); cv2.getContext('2d').drawImage(img.hand_kanna, -100, 0); SIL.kanna_top = cv2; } return SIL.kanna_top; }   // 工具掛けには 手首まで(腕の長い写真は 切る)
     return img[n]; }
   function silhouette(k) { if (SIL['s_' + k]) return SIL['s_' + k]; var im = toolImg(k), cv = mk(im.width, im.height), cc = cv.getContext('2d'); cc.drawImage(im, 0, 0); cc.globalCompositeOperation = 'source-in'; cc.fillStyle = '#2a1a0e'; cc.fillRect(0, 0, cv.width, cv.height); return (SIL['s_' + k] = cv); }
@@ -1083,18 +1164,19 @@
     }
   }
   // 大きいホッチキスを 自分の右手で 押さえている写真(hand_stapler。760 幅。腕は 奥へ、口は 手前)。口の下の辺 = 絵の (160, 800)
-  var HSP = { k: 0.95, ox: 160, oy: 800, cut: 272 };       // cut = これより右は 手首・腕(春巻の 上に重ねる)
+  var HSP = { k: 0.95, ox: 160, oy: 800, w0: 760 };       // cut = これより右は 手首・腕(春巻の 上に重ねる)
   function staplerAt(y, R, down) { return { x: MX - HSP.ox * HSP.k, y: y - R - HSP.oy * HSP.k + 6 + down * 16 }; }
-  function armExt(c, im, p, w, h) { c.save(); c.translate(p.x, p.y + h - 2); c.transform(1, 0, 0.32, 1, 0, 0); c.drawImage(im, 0, im.height - 3, im.width, 3, 0, 0, w, 900); c.restore(); }   // 腕の向き(右下)へ 斜めに のばす
   function drawStaplerBase(c, y, R, down) {            // 先に 全部を描く(台の前の辺は このあと 春巻に隠れる)
     var p = staplerAt(y, R, down), im = img.hand_stapler, w = im.width * HSP.k, h = im.height * HSP.k;
-    c.save(); c.shadowColor = 'rgba(20,8,2,.45)'; c.shadowBlur = 30; c.shadowOffsetY = 18; c.drawImage(im, p.x, p.y, w, h); c.restore();
-    armExt(c, im, p, w, h);      // 腕は 絵の下の辺で切れているので 画面の外まで のばす
+    c.save(); c.shadowColor = 'rgba(20,8,2,.45)'; c.shadowBlur = 30; c.shadowOffsetY = 18; c.drawImage(im, p.x, p.y, w, h); c.restore();   // 腕は 写真(11-27 12 回目に 描き足した)
   }
   function drawStapler(c, y, R, down) {               // 春巻の上に もう一度: 口より上 と 手首から右(腕は 春巻より 上にある)
     var p = staplerAt(y, R, down), im = img.hand_stapler, k = HSP.k, w = im.width * k, h = im.height * k;
-    c.save(); c.beginPath(); c.rect(p.x - 10, p.y - 10, w + 20, HSP.oy * k + 10); c.rect(p.x + HSP.cut * k, p.y, w, H); c.clip();
-    c.drawImage(im, p.x, p.y, w, h); armExt(c, im, p, w, h); c.restore();
+    // 11-27 12 回目(ユウキさん「手前側は上に被さってるのに、下は中に入っちゃってる」): 台(口より下)は ぜんぶ 春巻の下、口より上の 本体と 手・腕(写真の 肌の層 stapler_hand)は ぜんぶ 春巻の上
+    var jy = p.y + HSP.oy * k;
+    c.save(); var sg = c.createRadialGradient(MX + 8, jy + 10, 4, MX + 8, jy + 10, 70); sg.addColorStop(0, 'rgba(20,10,4,.42)'); sg.addColorStop(1, 'rgba(20,10,4,0)'); c.fillStyle = sg; c.beginPath(); c.ellipse(MX + 8, jy + 10, 80, 22, 0, 0, 7); c.fill(); c.restore();   // 口が 春巻に 落とす 影
+    c.save(); c.beginPath(); c.rect(p.x - 10, p.y - 10, HSP.w0 * k + 20, HSP.oy * k + 10); c.clip(); c.drawImage(im, p.x, p.y, w, h); c.restore();
+    c.drawImage(img.stapler_hand, p.x, p.y, w, h);
   }
   function stapleFrame(tn, dt) {
     var M = mini, g = M.g, t = tn - T0 - (fake != null ? 0 : 24), y = stapleY(), c = fx, i;
@@ -1142,11 +1224,18 @@
     c.drawImage(im, 0, 0, sw, im.height, -40, 0, L + 80, hh); c.restore();
   }
   // カッターを ペンのように持つ 自分の右手(hand_cutter。700 幅。刃先 = 絵の (1, 20))。向きは 変えず、刃先を 指の所へ
+  var CUTOFF = { x: -115, y: -80 };                    // 刃先 = 指 + CUTOFF(手の写真の 親指の あたりを 指で 持つ)
+  function lerpP(a, b, u) { return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u }; }
+  function cutEnds(L) {                                 // 刃の 通り道の 両端(板の外)と そこへ 刃先を 置くための 指の 位置(画面の中に 収める)
+    var dx = (L.b.x - L.a.x), dy = (L.b.y - L.a.y), n = Math.hypot(dx, dy); dx /= n; dy /= n;
+    var ta = { x: L.a.x - dx * 150, y: L.a.y - dy * 150 }, tb = { x: L.b.x + dx * 80, y: L.b.y + dy * 80 };
+    function fing(p) { return { x: clamp(p.x - CUTOFF.x, 50, W - 50), y: clamp(p.y - CUTOFF.y, 80, H - 60) }; }
+    return { ta: ta, tb: tb, fa: fing(ta), fb: fing(tb) };
+  }
   function stripImg(c, len, w, n) { var im = img.tofu, sy = 40 + (n * 97) % (im.height - 120); c.save(); c.shadowColor = 'rgba(30,20,10,.35)'; c.shadowBlur = 6; c.shadowOffsetY = 3; c.drawImage(im, 30, sy, im.width - 60, Math.max(6, w * 0.6), -len / 2, -w / 2, len, w); c.restore(); }   // 細切り = 干し豆腐の 写真の 細い帯
   function drawCutHand(c, x, y) {
     var im = img.hand_cutter, k = 1.05, w = im.width * k, h = im.height * k, ox = x - 1 * k, oy = y - 20 * k;
     c.save(); c.shadowColor = 'rgba(20,8,2,.4)'; c.shadowBlur = 24; c.shadowOffsetX = 10; c.shadowOffsetY = 22; c.drawImage(im, ox, oy, w, h); c.restore();
-    c.drawImage(im, im.width - 3, 0, 3, im.height, ox + w - 2, oy, 900, h);          // 腕は 絵の右の辺で切れているので 画面の外まで
   }
   function drawCutter(c, x, y, ang, k) {               // カッター(黄色の柄 + 折れる刃)。(x, y) = 刃先
     c.save(); c.translate(x, y); c.rotate(ang); c.scale(k, k);
@@ -1169,21 +1258,29 @@
     var S0 = 300; c.save(); c.shadowColor = 'rgba(30,20,10,.4)'; c.shadowBlur = 18; c.shadowOffsetY = 10; c.drawImage(M.tex, -S0, -S0, S0 * 2, S0 * 2); c.restore();
     c.strokeStyle = 'rgba(110,80,40,.7)'; c.lineWidth = 2.5; for (i = 0; i < M.cuts.length; i++) { c.beginPath(); c.moveTo(-S0, M.cuts[i]); c.lineTo(S0, M.cuts[i]); c.stroke(); }
     c.restore();
-    // 金尺(次に切る所)
-    L = g.line(cy); var ready = g.ready(t) && st === 'MINI', s = g.stroke;
-    if (sIn >= 1) drawRuler(c, L.a, L.b, -1);
-    if (ready && !s && sIn >= 1) {                       // 引きはじめの所(両端)
-      var pu = 0.5 + 0.5 * Math.sin(tn / 160);
-      [L.a, L.b].forEach(function (p) { c.strokeStyle = 'rgba(200,36,27,' + (0.5 + 0.5 * pu) + ')'; c.lineWidth = 6; c.beginPath(); c.arc(p.x, p.y, 30 + pu * 8, 0, 7); c.stroke(); });
+    // 金尺(次に切る所)。11-27 12 回目: 線 = 板の 端から端。刃の 通り道(点線)は 板の外まで、指を置く 印(輪)も 板の外。刃先は 指から CUTOFF だけ 左上(指で 切る所が 隠れない)
+    L = g.line(cy); var ready = g.ready(t) && st === 'MINI', s = g.stroke, ex = cutEnds(L);
+    if (sIn >= 1) {
+      drawRuler(c, L.a, L.b, -1);
+      c.save(); c.setLineDash([14, 12]); c.lineDashOffset = -tn / 30; c.strokeStyle = 'rgba(200,36,27,.45)'; c.lineWidth = 3; c.beginPath(); c.moveTo(ex.ta.x, ex.ta.y); c.lineTo(ex.tb.x, ex.tb.y); c.stroke(); c.restore();   // 刃の 通り道
+      if (g.cov) { var P0 = lerpP(L.a, L.b, g.cov.lo), P1 = lerpP(L.a, L.b, g.cov.hi); c.strokeStyle = 'rgba(70,46,18,.9)'; c.lineWidth = 4; c.beginPath(); c.moveTo(P0.x, P0.y); c.lineTo(P1.x, P1.y); c.stroke(); c.strokeStyle = 'rgba(255,250,235,.7)'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(P0.x, P0.y - 2); c.lineTo(P1.x, P1.y - 2); c.stroke(); }   // ここまで 切れた(のびていく)
     }
-    // 引いている間: 刃の通った跡 + カッター
-    var la = Math.atan2(L.b.y - L.a.y, L.b.x - L.a.x);
+    if (ready && !s && sIn >= 1) {                       // 指を 置く 印(両端。板の外)
+      var pu = 0.5 + 0.5 * Math.sin(tn / 160);
+      [ex.fa, ex.fb].forEach(function (p) { c.fillStyle = 'rgba(200,36,27,' + (0.18 + 0.12 * pu) + ')'; c.beginPath(); c.arc(p.x, p.y, 38 + pu * 6, 0, 7); c.fill(); c.strokeStyle = 'rgba(200,36,27,' + (0.6 + 0.4 * pu) + ')'; c.lineWidth = 6; c.beginPath(); c.arc(p.x, p.y, 38 + pu * 6, 0, 7); c.stroke(); });
+    }
+    // 引いている間: 刃先が 指に ついてくる + 音 / ふるえ。まだ 1 本も 切っていない時は 手が 通り道を なぞって 見せる
     if (s && M.last) {
-      var dx = s.to.x - s.from.x, dy = s.to.y - s.from.y, LL = Math.hypot(dx, dy), u = clamp(((M.last.x - s.from.x) * dx + (M.last.y - s.from.y) * dy) / (LL * LL), 0, 1);
-      c.strokeStyle = s.dev > g.cfg.devOk ? 'rgba(200,36,27,.9)' : 'rgba(80,56,24,.85)'; c.lineWidth = 3; c.beginPath(); s.pts.forEach(function (p, j) { if (j) c.lineTo(p.x, p.y); else c.moveTo(p.x, p.y); }); c.stroke();
       drawCutHand(c, M.last.x, M.last.y);
-      M.spd = M.spd * 0.7 + 0.3 * (M.lastV || 0); cutSound(M.spd);
-    } else { cutSound(0); if (sIn >= 1) drawCutHand(c, L.a.x - 4, L.a.y + 6); }
+      M.spd = M.spd * 0.7 + 0.3 * (M.lastV || 0); cutSound(M.spd); if (M.spd > 80 && tn - (M.hapT || 0) > 80) { M.hapT = tn; haptic('scrape'); }
+    } else {
+      cutSound(0);
+      if (sIn >= 1) {
+        if (ready && g.cuts === 0 && !g.cov) { var hp = ((tn / 1700) % 1), he = hp < 0.8 ? ease(hp / 0.8) : 1, hq = lerpP(ex.ta, ex.tb, he); c.save(); c.globalAlpha = 0.6 + 0.3 * Math.sin(hp * Math.PI); drawCutHand(c, hq.x, hq.y); c.restore(); }
+        else if (g.cov) { var hc = lerpP(L.a, L.b, g.cov.hi); drawCutHand(c, hc.x, hc.y); }
+        else drawCutHand(c, ex.ta.x, ex.ta.y);
+      }
+    }
     // 皿へ飛ぶ 細切り / 捨てる 切れ端
     for (i = M.fly.length - 1; i >= 0; i--) { var f = M.fly[i], a = clamp((tn - f.t0) / 560, 0, 1), e = ease(a);
       var x = lerp(f.x0, f.x1, e), y = lerp(f.y0, f.y1, e) - Math.sin(a * Math.PI) * 180;
@@ -1198,16 +1295,13 @@
     else if (e.type === 'judge') {
       var mxp = (e.from ? (e.from.x + e.to.x) / 2 : 540), myp = (e.from ? (e.from.y + e.to.y) / 2 : cy), ang = e.from ? Math.atan2(e.to.y - e.from.y, e.to.x - e.from.x) : 0, len = e.from ? Math.hypot(e.to.x - e.from.x, e.to.y - e.from.y) : 400;
       var P = kitchenPlate();
-      if (e.grade === 'perfect' || e.grade === 'good') {
-        play('cutEnd'); haptic('cut'); grade(e.grade === 'perfect' ? 'S' : 'A', clamp(mxp, 200, 880), myp - 120);
-        M.fly.push({ t0: now(), x0: mxp, y0: myp, x1: P.x + (Math.random() - 0.5) * P.rx * 0.6, y1: P.y + (Math.random() - 0.5) * P.ry * 0.5, ang: ang, spin: (Math.random() - 0.5) * 0.8, len: len, bad: false });
-        var an = M.g.stage === 0 ? 0 : M.g.stage === 1 ? Math.PI / 2 : Math.PI / 4; M.cuts.push(-(mxp - 540) * Math.sin(an) + (myp - cy) * Math.cos(an));   // 切った所に 線が残る(板の向きで)
-      } else if (e.grade === 'crooked' || e.grade === 'ripped') {
-        play(e.grade === 'ripped' ? 'rip' : 'crook'); haptic('loose'); grade(e.grade === 'ripped' ? 'F' : 'B', clamp(mxp, 200, 880), myp - 120, e.grade === 'ripped' ? T('ちぎれた', 'Ripped') : T('曲がった', 'Crooked'));
-        M.fly.push({ t0: now(), x0: mxp, y0: myp, x1: W + 200, y1: myp + 300, ang: ang, spin: 2.4, len: len * 0.8, bad: true });
-      } else { play('loose'); grade('B', clamp(mxp, 200, 880), myp - 120, e.grade === 'cut_short' && e.dur > g.cfg.maxMs ? T('のろい', 'Too slow') : T('切れてない', 'Not through')); }
+      var gG = e.grade === 'perfect' ? 'S' : e.grade === 'good' ? 'A' : 'B';      // 11-27 12 回目: 曲がっても 1 本(可)。皿へ
+      play('cutEnd'); if (gG === 'B') play('crook'); haptic(gG === 'B' ? 'loose' : 'cut'); grade(gG, clamp(mxp, 200, 880), myp - 120, gG === 'B' ? T('曲がった', 'Crooked') : '');
+      M.fly.push({ t0: now(), x0: mxp, y0: myp, x1: P.x + (Math.random() - 0.5) * P.rx * 0.6, y1: P.y + (Math.random() - 0.5) * P.ry * 0.5, ang: ang, spin: (Math.random() - 0.5) * 0.8, len: len, bad: false });
+      var an = M.g.stage === 0 ? 0 : M.g.stage === 1 ? Math.PI / 2 : Math.PI / 4; M.cuts.push(-(mxp - 540) * Math.sin(an) + (myp - cy) * Math.cos(an));   // 切った所に 線が残る(板の向きで)
       cutSound(0);
-    } else if (e.type === 'miss_start') { /* 尺の端から外れた所を 押した: 何もしない */ }
+    } else if (e.type === 'lift') { cutSound(0); /* 途中で 離した: 失敗ではない。続きから */ }
+    else if (e.type === 'miss_start') { /* 線から 遠い所を 押した: 何もしない */ }
     else if (e.type === 'stage') { play('boss'); M.sheetIn = now(); M.cuts = []; if (e.stage === 1) { say(T('幹事「取り分けやすい 長さで！」 → 縦に切る', 'Host: "Shorter, easier to share!" → cut down'), 2400); bgmLayer(1); } else { say(T('大将「最後は 斜め切りや」', 'Chef: "Finish with a bias cut."'), 2400); bgmLayer(2); hiFlash = now(); } }
     else if (e.type === 'timeup') { play('whistle'); cutSound(0); }
     else if (e.type === 'end') { cutSound(0); finishMini(e.kind); }
@@ -1215,9 +1309,9 @@
   function finishMini(kind) { endKind = kind; endT = now(); st = 'MINI_END'; hintEl.classList.remove('on'); if (kind === 'idle') { play('over'); } }
   // 2・3 面の 指(画面の座標 → 舞台の座標)
   function stageXY(e) { var r = cFx.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H }; }
-  function miniDown(t, p) { audioOn(); if (st !== 'MINI') return; if (mini.kind === 'staple') handleMini(mini.g.tap(t - T0)); else if (SCN[mini.kind].down) SCN[mini.kind].down(t, p); else { handleMini(mini.g.down(t - T0, p.x, p.y, cutY())); mini.last = p; mini.lastT = t; mini.lastV = 0; } }
-  function miniMove(t, p) { if (st === 'MINI' && SCN[mini.kind].move) return SCN[mini.kind].move(t, p); if (st !== 'MINI' || mini.kind !== 'cut' || !mini.g.stroke) return; mini.g.move(t - T0, p.x, p.y); var dtm = Math.max(1, t - (mini.lastT || t)); mini.lastV = Math.hypot(p.x - mini.last.x, p.y - mini.last.y) / dtm * 1000; mini.last = p; mini.lastT = t; }
-  function miniUp(t, p) { if (st === 'MINI' && SCN[mini.kind].up) return SCN[mini.kind].up(t, p); if (st !== 'MINI' || mini.kind !== 'cut') return; handleMini(mini.g.up(t - T0, p.x, p.y)); mini.last = null; }
+  function miniDown(t, p) { audioOn(); if (st !== 'MINI') return; if (mini.kind === 'staple') handleMini(mini.g.tap(t - T0)); else if (SCN[mini.kind].down) SCN[mini.kind].down(t, p); else { var tp = { x: p.x + CUTOFF.x, y: p.y + CUTOFF.y }; handleMini(mini.g.down(t - T0, tp.x, tp.y, cutY())); mini.last = tp; mini.lastT = t; mini.lastV = 0; } }
+  function miniMove(t, p) { if (st === 'MINI' && SCN[mini.kind].move) return SCN[mini.kind].move(t, p); if (st !== 'MINI' || mini.kind !== 'cut' || !mini.g.stroke) return; var tp = { x: p.x + CUTOFF.x, y: p.y + CUTOFF.y }; handleMini(mini.g.move(t - T0, tp.x, tp.y)); var dtm = Math.max(1, t - (mini.lastT || t)); if (mini.last) mini.lastV = Math.hypot(tp.x - mini.last.x, tp.y - mini.last.y) / dtm * 1000; mini.last = tp; mini.lastT = t; }
+  function miniUp(t, p) { if (st === 'MINI' && SCN[mini.kind].up) return SCN[mini.kind].up(t, p); if (st !== 'MINI' || mini.kind !== 'cut') return; handleMini(mini.g.up(t - T0, p.x + CUTOFF.x, p.y + CUTOFF.y)); mini.last = null; }
 
   // ================= 四品目: コーキングガンで 花焼売(せいろの写真)=================
   // せいろの 皮 9 つの 真ん中(写真の座標。目で測った値)。餡を絞り終えた 焼売は ここへ 入る
@@ -1390,7 +1484,7 @@
   // ================= 二品目: 金づちで 叩ききゅうり(厨房)=================
   // きゅうり = 写真(cucumber)。叩いた節に ひび・同じ節を 二回で つぶれ。金づち = 右手の写真(hand_hammer。叩く面 = 絵の (162, 38)、握り = (303, 437))
   function smashC() { return { x: 540, y: Math.round(H * 0.76) }; }
-  function smashStart(sd) { return { kind: 'smash', g: new GT.Smash(sd), swing: new Spring(700, 26, 0), at: null, plate: [], fly: null, last: null };
+  function smashStart(sd) { return { kind: 'smash', g: new GT.Smash(sd), swing: new Spring(700, 26, 0), at: null, plate: [], fly: null, bursts: [], last: null };
   }
   function drawCucumber(c, d, x, y, sc, segs, len) {  // きゅうり 1 本(写真)+ ひび・つぶれ
     var im = img.cucumber, w = len * 1.06 * sc, h = im.height * w / im.width;
@@ -1403,6 +1497,7 @@
       else c.drawImage(sm, sx, 0, sW, sm.height, px - bw / 2, y - h / 2, bw, h);
     }
   }
+  function drawChunk(c, k, x, y, r, sc) { var im = img['chunk' + k]; if (!im) return; var w = im.width * 0.9 * sc, h = im.height * 0.9 * sc; c.save(); c.translate(x, y); c.rotate(r || 0); c.shadowColor = 'rgba(20,10,4,.4)'; c.shadowBlur = 10 * sc; c.shadowOffsetY = 7 * sc; c.drawImage(im, -w / 2, -h / 2, w, h); c.restore(); }   // 叩ききゅうりの かけら(写真)
   function drawHammer(c, x, y, up) {                  // 叩く面 = (x, y)。up = 0(当たった)〜 1(振りかぶった)
     var im = img.hand_hammer, k = 0.95, w = im.width * k, h = im.height * k, px = x + (303 - 162) * k, py = y + (437 - 38) * k;
     c.save(); c.translate(px, py); c.rotate(-0.55 * up); c.translate(-303 * k, -437 * k - 30 * up);
@@ -1413,11 +1508,17 @@
     var M = mini, g = M.g, t = tn - T0 - (fake != null ? 0 : 24), c = fx, C = smashC(), i, len = g.cfg.len;
     if (st === 'MINI') handleMini(g.advance(t));
     var P = kitchenPlate();
-    for (i = 0; i < M.plate.length; i++) { var q = M.plate[i]; c.save(); c.translate(P.x + q.x * P.rx, P.y + q.y * P.ry); c.rotate(q.r); drawCucumber(c, q.d, 0, 0, 0.38, q.segs, len); c.restore(); }
+    for (i = 0; i < M.plate.length; i++) { var q = M.plate[i]; if (q.pcs) { q.pcs.forEach(function (pc) { drawChunk(c, pc.k, P.x + (q.x + pc.tx) * P.rx, P.y + (q.y + pc.ty) * P.ry, pc.r1, 0.42); }); continue; } c.save(); c.translate(P.x + q.x * P.rx, P.y + q.y * P.ry); c.rotate(q.r); drawCucumber(c, q.d, 0, 0, 0.38, q.segs, len); c.restore(); }
+    for (var bi = M.bursts.length - 1; bi >= 0; bi--) {   // 割れて 転がる(0.4 秒)→ 皿へ 飛ぶ(0.45 秒)
+      var B = M.bursts[bi], bt = tn - B.t0, a1 = clamp(bt / 400, 0, 1), a2 = clamp((bt - 400) / 450, 0, 1), e1 = 1 - Math.pow(1 - a1, 3), e2 = ease(a2);
+      B.pcs.forEach(function (pc) { var x1 = pc.x0 + pc.vx * e1, y1 = pc.y0 + pc.vy * e1 + 30 * Math.sin(a1 * Math.PI) * -1, r1 = pc.r0 + pc.vr * e1, tx = P.x + (B.px + pc.tx) * P.rx, ty = P.y + (B.py + pc.ty) * P.ry; pc.r1 = r1;
+        drawChunk(c, pc.k, lerp(x1, tx, e2), lerp(y1, ty, e2) - Math.sin(a2 * Math.PI) * 160, r1, lerp(1, 0.42, e2)); });
+      if (a2 >= 1) { M.plate.push({ pcs: B.pcs, x: B.px, y: B.py }); M.bursts.splice(bi, 1); play('plate'); }
+    }
     if (M.fly) { var a = clamp((tn - M.fly.t0) / 480, 0, 1), e = ease(a), ok = M.fly.ok, tx = ok ? P.x + M.fly.px * P.rx : W + 400, ty = ok ? P.y + M.fly.py * P.ry : C.y + 300;
       c.save(); c.translate(lerp(C.x, tx, e), lerp(C.y, ty, e) - Math.sin(a * Math.PI) * 200); c.rotate(ok ? M.fly.r * e : e * 2); drawCucumber(c, M.fly.d, 0, 0, lerp(1, ok ? 0.38 : 0.7, e), M.fly.segs, len); c.restore();
       if (a >= 1) { if (ok) { M.plate.push({ d: M.fly.d, segs: M.fly.segs, x: M.fly.px, y: M.fly.py, r: M.fly.r }); play('plate'); } M.fly = null; } }
-    var rd = g.ready(t) || st !== 'MINI';
+    var rd = (g.ready(t) || st !== 'MINI') && !(M.bursts.length && tn - M.bursts[M.bursts.length - 1].t0 < 430);   // 割れた かけらが 散るまで 次の きゅうりを 出さない
     if (rd) {
       var segs = g.cur.segs.map(function (s) { return { u: s.u, hit: s.hit }; });
       drawCucumber(c, g.cur.id, C.x, C.y, 1, segs, len);
@@ -1437,7 +1538,12 @@
     } else if (e.type === 'cucumber') {
       var segs = e.d.segs.map(function (s, i) { return { u: s.u, hit: s.hit, mush: e.result === 'ruined' && i === e.d.segs.findIndex(function () { return true; }) && false }; });
       if (e.result === 'ruined') segs.forEach(function (s) { if (s.hit) s.mush = true; });
-      var n = M.plate.length; M.fly = { t0: now(), ok: e.result === 'done', d: e.d.id, segs: segs, px: -0.45 + (n % 3) * 0.42, py: -0.4 + Math.floor(n / 3) % 3 * 0.32, r: (n % 2 ? 0.2 : -0.15) };
+      var n = M.plate.length + M.bursts.length, px = -0.45 + (n % 3) * 0.42, py = -0.4 + Math.floor(n / 3) % 3 * 0.32;
+      if (e.result === 'done') {                       // 11-27 12 回目(ユウキさん「叩き終わった後はバラバラに」): 写真の かけら 8 つに 割れて 転がり、皿へ
+        var C0 = smashC(), Lc = M.g.cfg.len, rs = G.rng(e.d.id * 31 + 7), pcs = [];
+        for (var j = 0; j < 8; j++) { var fx0 = (j + 0.5) / 8 - 0.5; pcs.push({ k: j, x0: C0.x + fx0 * Lc * 0.92, y0: C0.y + (rs() - 0.5) * 24, vx: fx0 * 260 + (rs() - 0.5) * 80, vy: (rs() - 0.5) * 140, r0: (rs() - 0.5) * 0.6, vr: (rs() - 0.5) * 2.2, tx: (rs() - 0.5) * 0.26, ty: (rs() - 0.5) * 0.18 }); }
+        M.bursts.push({ t0: now(), px: px, py: py, pcs: pcs }); M.fly = null;
+      } else M.fly = { t0: now(), ok: false, d: e.d.id, segs: segs, px: px, py: py, r: (n % 2 ? 0.2 : -0.15) };
       if (e.result === 'done') { play('bead'); haptic('bead'); }
     } else if (e.type === 'stage') { play('boss'); say(T('大将「細かく 叩け。節は 6 つや」', 'Chef: "Finer! Six spots now."'), 2400); bgmLayer(1); }
     else if (e.type === 'timeup') play('whistle');
@@ -1513,7 +1619,7 @@
   // ---- 起動 ----
   function loop() { frame(now()); requestAnimationFrame(loop); }
   window.addEventListener('resize', layout);
-  Promise.all(['shop', 'kitchen', 'dumpling', 'dumpling_open', 'hand', 'hand_thin', 'hand_torn', 'head', 'drill', 'screw', 'drill_side', 'hand_stapler', 'hand_cutter', 'bg_shumai', 'bg_noodle', 'wok_boil', 'hand_kanna', 'hand_caulk', 'hand_hammer', 'hand_saw', 'cucumber', 'ribs', 'crank_wheel', 'crank_body', 'crank_hand', 'roll', 'staple', 'tofu', 'ruler', 'wrapper', 'shumai_top', 'pork', 'board', 'negipile', 'noodle', 'cucumber_smash', 'pegboard', 'grade_S', 'grade_A', 'grade_B', 'grade_F'].map(function (n) { return load(n, 'assets/' + n + '.webp'); }).concat(document.fonts ? [
+  Promise.all(['shop', 'kitchen', 'dumpling', 'dumpling_open', 'hand', 'hand_thin', 'hand_torn', 'head', 'drill', 'screw', 'drill_side', 'hand_stapler', 'hand_cutter', 'bg_shumai', 'bg_noodle', 'wok_boil', 'hand_kanna', 'hand_caulk', 'hand_hammer', 'hand_saw', 'cucumber', 'ribs', 'crank_wheel', 'crank_body', 'crank_hand', 'roll', 'staple', 'tofu', 'ruler', 'wrapper', 'shumai_top', 'pork', 'board', 'negipile', 'noodle', 'cucumber_smash', 'pegboard', 'grade_S', 'grade_A', 'grade_B', 'grade_F', 'stapler_hand', 'grade_H', 'g_kou', 'g_soku', 'g_tei', 'chunk0', 'chunk1', 'chunk2', 'chunk3', 'chunk4', 'chunk5', 'chunk6', 'chunk7'].map(function (n) { return load(n, 'assets/' + n + '.webp'); }).concat(document.fonts ? [
       document.fonts.load('40px "Potta"', 'ドリル飯店ぴたっDrillDiner').catch(function () {}), document.fonts.load('40px "YujiSyuku"', '餃子麻婆豆腐').catch(function () {}),
       Promise.all(['500', '700', '900'].map(function (w) { return document.fonts.load(w + ' 40px "ZenKaku"', '餃子0123Aa'); })).catch(function () {})] : [])).then(function () {
     ['hand', 'hand_thin', 'hand_torn'].forEach(function (n) { spr[n] = bake(img[n], HS, 34, 30); }); spr.drill = bake(img.drill, DRL_F.ds, 30, 34); spr.drill_side = bake(img.drill_side, DRL_S.ds, 30, 34);
@@ -1529,8 +1635,8 @@
     get state() { return st; }, get game() { return game; }, get T0() { return T0; }, get endKind() { return endKind; }, get boil() { return boil; },
     get audio() { return AC ? { state: AC.state, rate: AC.sampleRate } : null; }, get drillSnd() { return drillSnd; },
     get settings() { return SET; }, get S() { return S; }, set S(v) { S = v; }, get mini() { return mini; }, cutY: function () { return cutY(); }, smashC: function () { return smashC(); }, sawLine: function () { return sawLine(mini); }, get prog() { return PROG; }, openCard: openCard, boardOpen: boardOpen, toTitle: toTitle,
-    tap: function (x, y) { miniDown(now(), { x: x, y: y }); }, kDown: function (id, x, y, mouse) { kannaDown(now(), id, { x: x, y: y }, !!mouse); }, kMove: function (id, x, y) { kannaMove(now(), id, { x: x, y: y }); }, kUp: function (id) { kannaUp(now(), id); }, crankC: function () { return crankC(); }, caulkC: function () { return caulkC(); }, move: function (x, y) { miniMove(now(), { x: x, y: y }); }, lift: function (x, y) { miniUp(now(), { x: x, y: y }); }, get bgm() { return { on: BGM.on, step: BGM.step, layer: BGM.layer, tempo: BGM.tempo, gain: bgmBus ? bgmBus.gain.value : null, sfxGain: sfx ? sfx.gain.value : null }; }, setOpen: setOpen,
-    grade: function (g, x, y, why) { grade(g, x, y, why); },   // 判定の札だけ 出す(見た目の検査用)
+    tap: function (x, y) { miniDown(now(), { x: x, y: y }); }, kDown: function (id, x, y, mouse) { kannaDown(now(), id, { x: x, y: y }, !!mouse); }, kMove: function (id, x, y) { kannaMove(now(), id, { x: x, y: y }); }, kUp: function (id) { kannaUp(now(), id); }, crankC: function () { return crankC(); }, caulkC: function () { return caulkC(); }, move: function (x, y) { miniMove(now(), { x: x, y: y }); }, lift: function (x, y) { miniUp(now(), { x: x, y: y }); }, get bgm() { return { song: BGM.song, step: BGM.step, on: BGM.on, step: BGM.step, layer: BGM.layer, tempo: BGM.tempo, gain: bgmBus ? bgmBus.gain.value : null, sfxGain: sfx ? sfx.gain.value : null }; }, setOpen: setOpen,
+    grade: function (g, x, y, why) { grade(g, x, y, why); }, cutOff: CUTOFF, cutEnds: function (L) { return cutEnds(L); },   // 判定の札だけ 出す(見た目の検査用)
     soundLog: soundLog, hapticLog: hapticLog, clockIn: clockIn, press: function () { press(now()); }, release: function () { release(now()); },
     setFake: function (t) { fake = t; lastT = t == null ? performance.now() : t; }, get fake() { return fake; },
     step: function (ms, each) { each = each || 16; for (var e = 0; e < ms - 1e-6; e += each) { fake += Math.min(each, ms - e); frame(fake); } },
