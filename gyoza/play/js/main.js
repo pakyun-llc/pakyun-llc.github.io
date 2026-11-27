@@ -64,7 +64,7 @@
   function haptic(kind) {
     if (!SET.vib) return;
     hapticLog.push(kind); if (hapticLog.length > 600) hapticLog.shift();
-    try { if (window.GZNative && window.GZNative.haptic) return window.GZNative.haptic(kind); if (navigator.vibrate) navigator.vibrate(HAPT[kind]); } catch (e) {}
+    try { if (window.GZNative && window.GZNative.haptic) return window.GZNative.haptic(kind); if (navigator.vibrate) { var hv = HAPT[kind]; if (SHOP && SHOP.motor && (kind === 'spin' || kind === 'load') && typeof hv === 'number') hv = Math.round(hv * (1 + 0.3 * SHOP.motor)); navigator.vibrate(hv); } } catch (e) {}
   }
 
   // ---- 音(全部 コードで作る)----
@@ -94,12 +94,12 @@
     lfo.frequency.value = 31; lg.gain.value = 0; lfo.connect(lg); lg.connect(out.gain);
     out.gain.value = 1; mg.gain.value = 0; wg.gain.value = 0; ng.gain.value = 0; out.connect(sfx);
     m.start(); w.start(); n.start(); lfo.start();
-    DR = { m: m, mg: mg, w: w, wf: wf, wg: wg, ng: ng, lg: lg, lfo: lfo };
+    DR = { m: m, mg: mg, mf: mf, w: w, wf: wf, wg: wg, ng: ng, lg: lg, lfo: lfo };
     bgmSync();
   }
   // 音の道を 作り直す(アプリから: 画面収録の 始め / 終わり・出力の 切り替え。ページから: 'interrupted' のあと)。次に 触った時に 鳴りはじめる
   function audioReset() {
-    if (!AC) return; var old = AC; AC = null; master = sfx = bgmBus = noiseBuf = analyser = DR = null; SQS = PLS = SWS = CUTS = null; VOICE = {}; voiceLoading = false; voiceSrc = null; BGM.on = false;
+    if (!AC) return; var old = AC; AC = null; master = sfx = bgmBus = noiseBuf = analyser = DR = null; SQS = PLS = SWS = CUTS = SZS = null; VOICE = {}; voiceLoading = false; voiceSrc = null; BGM.on = false;
     try { old.close(); } catch (e) {}
     soundLog.push('reset'); audioOn();
     if (window.GZNative && GZNative.log) GZNative.log('audio reset ctx=' + (AC && AC.sampleRate) + ' native=' + GZNative.sampleRate);
@@ -115,10 +115,11 @@
     if (!AC || AC.state !== 'running' || !DR) return;
     var t = AC.currentTime, k = 0.018;
     DR.m.frequency.setTargetAtTime(hz, t, k); DR.w.frequency.setTargetAtTime(hz * 7.02, t, k); DR.wf.frequency.setTargetAtTime(hz * 7.02, t, k);
-    DR.mg.gain.setTargetAtTime(0.2 * Math.pow(rpm, 0.7) * (1 + 0.5 * load), t, k);
+    var mk2 = 1 + 0.22 * SHOP.motor; DR.mf.frequency.setTargetAtTime(1400 - 260 * SHOP.motor, t, 0.05);   // 店の モーター: 太く・低く
+    DR.mg.gain.setTargetAtTime(0.2 * mk2 * Math.pow(rpm, 0.7) * (1 + 0.5 * load), t, k);
     DR.wg.gain.setTargetAtTime(0.11 * Math.pow(rpm, 1.4) * (1 - 0.4 * load), t, k);
     DR.ng.gain.setTargetAtTime(0.05 * rpm, t, k);
-    DR.lg.gain.setTargetAtTime(0.45 * load * rpm, t, k); DR.lfo.frequency.setTargetAtTime(24 + 10 * rpm, t, k);
+    DR.lg.gain.setTargetAtTime(0.45 * (1 + 0.25 * SHOP.motor) * load * rpm, t, k); DR.lfo.frequency.setTargetAtTime(24 + 10 * rpm, t, k);
   }
   function env(g, t, a, peak, d) { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + d); }
   function tone(type, f0, f1, t, a, d, peak) {
@@ -143,7 +144,7 @@
 
   // ---- BGM(中華風。全部コード。旋律は この遊びのために書いたもの)----
   // 五音(D の 宮商角徵羽 = レ ミ ファ# ラ シ)。古箏っぽい はじき = Karplus-Strong を先に焼いておく / 拍木(木魚)/ 小さな銅鑼 / 二胡っぽい のばし(15 秒から)/ 鈸(30 秒の HI から、テンポも上がる)
-  var BGM = { on: false, next: 0, step: 0, timer: null, tempo: 1, layer: 0, duck: 1, pluck: {}, log: [], song: 'drill' };
+  var BGM = { on: false, next: 0, step: 0, timer: null, tempo: 1, layer: 0, duck: 1, pluck: {}, log: [], song: 'drill', fever: 0 };
   // 音名 → Hz(A4 = 440)。'#' と 'b' を 読む
   var NOTE = {};
   function hzOf(n) { if (NOTE[n]) return NOTE[n]; var m = /^([A-G])([#b]?)(\d)$/.exec(n); if (!m) return 0; var pc = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0); return (NOTE[n] = 440 * Math.pow(2, (pc + 12 * (+m[3] + 1) - 69) / 12)); }
@@ -248,6 +249,9 @@
       if (P === 'drama') { if (k === 0 || k === 3 || k === 6) drum(t, 0.32, true); if (k === 4) drum(t, 0.2, false); if (k % 2 === 1) woodblock(t, 0.04, true); }
       if (BGM.layer >= 2 && k % 2 === 1 && P !== 'fest' && P !== 'drama') woodblock(t, 0.05, true);
       if (BGM.layer >= 2 && (k === 0 || k === 4)) cymbal(t, 0.035);
+      if (BGM.fever >= 1 && k % 2 === 1) woodblock(t, 0.045, true);        // 熱: 拍木が 細かく / 熱々: 鈸 / 神ドリル: 太鼓
+      if (BGM.fever >= 2 && k === 2) cymbal(t, 0.03);
+      if (BGM.fever >= 3 && k % 4 === 0) drum(t, 0.2, true);
       if (BGM.layer >= 1 && k === 0) { var pn = S.padN[bar], pp = S.padN[(bar + 7) % 8]; if (S.pad === 'erhu') erhu(t, pp, pn, e8 * 7.6, 0.05); else dizi(pn, t, e8 * 7.6, 0.06); }
       if (s % S.gong === 0) gong(t, 196, 0.05, 2.4, bgmBus);
       BGM.log.push(s); if (BGM.log.length > 200) BGM.log.shift();
@@ -306,7 +310,7 @@
   function woodblock2(t) { tone('sine', 900, 760, t, 0.002, 0.07, 0.18); }
   // 3 面: カッターが 紙のような 干し豆腐を 引く音(指が動いている間だけ。速さで 大きさと 高さが変わる)
   // 四品目の 絞る音・五品目の かんなの 削り音(指が動いている間だけ。速さで 大きさが変わる)
-  var SQS = null, PLS = null;
+  var SQS = null, PLS = null, SZS = null;
   function contNoise(o, type, f0, q) { if (!AC || AC.state !== 'running') return null; if (!o) { var src = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain(); src.buffer = noiseBuf; src.loop = true; f.type = type; f.Q.value = q; f.frequency.value = f0; g.gain.value = 0; src.connect(f); f.connect(g); g.connect(sfx); src.start(); o = { f: f, g: g }; } return o; }
   var SWS = null; function sawSound(k) { SWS = contNoise(SWS, 'bandpass', 2000, 2.2); if (!SWS) return; var t = AC.currentTime; SWS.g.gain.setTargetAtTime(k > 0 ? 0.06 + 0.3 * k : 0, t, 0.02); SWS.f.frequency.setTargetAtTime(1400 + 2400 * k, t, 0.03); }   // のこぎりの ぎこぎこ
   function squeezeSound(k) { SQS = contNoise(SQS, 'lowpass', 500, 0.9); if (!SQS) return; var t = AC.currentTime; SQS.g.gain.setTargetAtTime(k > 0 ? 0.08 + 0.18 * k : 0, t, 0.03); SQS.f.frequency.setTargetAtTime(350 + 500 * k, t, 0.04); }
@@ -355,7 +359,8 @@
   var SC = 0.29, SCR = { w: 220, h: 661, headH: 101 };                                                     // 斜めのネジ(座金つき頭)
   var TH = Math.atan2(DRL_S.ax, -DRL_S.ay);                                                                // 斜めのネジ・ドリルの傾き(まっすぐ上から 右へ 33.6 度)
   var FRONT = true, DS = 0.85, DRL = DRL_F;
-  function setMode() { FRONT = SET.mode !== 'side'; DRL = FRONT ? DRL_F : DRL_S; DS = DRL.ds; }
+  var SET_MODE_STAGE = null;   // 面ごとの 角度(焼き餃子 = 斜め)。null = 設定の まま(一皿目)
+  function setMode() { FRONT = (SET_MODE_STAGE || SET.mode) !== 'side'; DRL = FRONT ? DRL_F : DRL_S; DS = DRL.ds; }
   setMode();
   var BGI = { w: 1188, h: 2112, cx: 600 };                                    // 店の写真(shop / shop_pot は同じ構図)。cx = 画面の真ん中に来る x
   var POTW = { cx: 600, cy: 1140, rx: 470, ry: 225 };   // 11-27(8 回目): wok_boil(= cn_wok_boil。厨房の奥の 中華鍋に 寄った写真)の 湯の面。前 = 火の上の大鍋 608, 960 / 台の上の鍋 600, 1300
@@ -364,13 +369,21 @@
   var _unused_pot = { cx: 608, cy: 960, rx: 430, ry: 178 };                           // 11-27: kitchen_pot(= cn_stove_pot。火の上の大鍋)の 湯の面(前は 台の上の鍋 600, 1300 / 客席の shop_pot 607, 1313)
   var PLATE = { cx: 600, cy: 1310, rx: 300, ry: 226 };                         // 11-27: 一品目も 厨房へ = kitchen の 大皿(前は 客席 shop の 618, 1367, 361, 234)
   function rnd(seed) { return G.rng(seed); }
+  function rebakeDrill() { spr.drill = bake(img[['drill', 'drill_red', 'drill_black', 'drill_gold'][SHOP.color] || 'drill'] || img.drill, DRL_F.ds, 30, 34); }   // 店で 買った ドリルの 色
   function bake(im, sc, blur, oy) {                 // 影つきで 先に焼いておく(毎コマ影を計算しない)
     var pad = 60, cv = mk(im.width * sc + pad * 2, im.height * sc + pad * 2), c = cv.getContext('2d');
     c.shadowColor = 'rgba(60,36,10,.42)'; c.shadowBlur = blur; c.shadowOffsetY = oy; c.shadowOffsetX = -oy * 0.4; c.drawImage(im, pad, pad, im.width * sc, im.height * sc); cv.pad = pad; return cv;
   }
   // ネジ 1 本を 正面から。(0, 0) = 皮に入る点、hgt = 頭の下の面が皮から浮いている高さ(マイナス = 沈んでいる)、rot = 回った角度、loose = ゆるいまま残った
   // 浮いている = 頭が手前にあるぶん 大きく・左上へずれ、影が右下へ離れ、軸が見える。触れる = 影が頭の下に入る。沈む = 頭が少し小さくなり、まわりの皮が くぼんで 縁が埋まる
-  function drawHead(c, hgt, rot, spin, loose) {
+  var HEADT = {};
+  function headImg(kind) {                            // 金ネジ / 錆びネジ = ネジの頭の 写真に 色を かける(1 回だけ)
+    if (kind !== 'G' && kind !== 'R') return img.head; if (HEADT[kind]) return HEADT[kind];
+    var im = img.head, cv = mk(im.width, im.height), cc = cv.getContext('2d'); cc.drawImage(im, 0, 0); cc.globalCompositeOperation = 'multiply'; cc.fillStyle = kind === 'G' ? '#ffcf3a' : '#a0582a'; cc.fillRect(0, 0, cv.width, cv.height);
+    cc.globalCompositeOperation = 'destination-in'; cc.drawImage(im, 0, 0); if (kind === 'G') { cc.globalCompositeOperation = 'lighter'; cc.globalAlpha = 0.25; cc.drawImage(im, 0, 0); }
+    return (HEADT[kind] = cv);
+  }
+  function drawHead(c, hgt, rot, spin, loose, kind) {
     var up = Math.max(0, hgt), sink = Math.max(0, -hgt), hx = -0.25 * up, hy = -0.8 * up + sink * 0.12, sc = 1 + up * 0.003 - sink * 0.004, r = HR * sc, g;
     if (up > 0) {                                     // 影(皮の上。高いほど 離れて ぼける)
       var sx0 = 0.34 * up + 5, sy0 = 0.26 * up + 6, sr = HR * (1.05 + up * 0.004);
@@ -384,7 +397,7 @@
       g = c.createRadialGradient(0, hy + 2, r * 0.8, 0, hy + 2, dr); g.addColorStop(0, 'rgba(70,50,26,' + (0.4 + 0.5 * kk) + ')'); g.addColorStop(0.5, 'rgba(84,62,34,' + (0.2 + 0.3 * kk) + ')'); g.addColorStop(1, 'rgba(84,62,34,0)'); c.fillStyle = g; c.beginPath(); c.arc(0, hy + 2, dr, 0, 7); c.fill();
     }
     c.save(); c.translate(hx, hy); if (loose) { c.rotate(loose); c.scale(1, 0.86); }
-    c.save(); c.rotate(rot); c.drawImage(img.head, -r, -r, r * 2, r * 2); c.restore();
+    c.save(); c.rotate(rot); c.drawImage(headImg(kind), -r, -r, r * 2, r * 2); c.restore();
     if (spin > 0.05) { c.fillStyle = 'rgba(200,205,210,' + 0.3 * spin + ')'; c.beginPath(); c.arc(0, 0, r * 0.5, 0, 7); c.fill(); }      // 回っている十字の ぶれ
     g = c.createLinearGradient(-r, -r, r, r); g.addColorStop(0, 'rgba(255,255,255,.22)'); g.addColorStop(0.5, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(0,0,0,.2)'); c.fillStyle = g; c.beginPath(); c.arc(0, 0, r, 0, 7); c.fill();   // 光の向きは 回っても変わらない
     if (sink > 0) { c.strokeStyle = 'rgba(236,224,200,' + clamp(sink / 16, 0, 0.75) + ')'; c.lineWidth = 2 + sink * 0.3; c.beginPath(); c.arc(0, 0, r - 0.5, 0, 7); c.stroke(); }   // 縁が皮に埋まる
@@ -462,9 +475,9 @@
     c.restore();
   }
   function drawBg() {
-    sx(bg); var boilBg = (st === 'BOIL' || (st === 'RESULT' && boil)) && boil && boil.shown, s = bgS(), b = st === 'TITLE' || (st === 'CARD' && cardEnd) ? 'shop' : STG[S].bg, kit = b !== 'shop';
+    sx(bg); var boilBg = (st === 'BOIL' || (st === 'RESULT' && boil)) && boil && boil.shown, s = bgS(), b = st === 'TITLE' || (st === 'CARD' && cardEnd) ? 'shop' : PREP && mini && STG[S].kind === 'prep' ? (mini.kind === 'crank' ? 'pork' : 'kitchen') : STG[S].bg, kit = b !== 'shop';
     bg.fillStyle = '#2c160e'; bg.fillRect(0, 0, W, H);
-    bg.drawImage(boilBg ? img.wok_boil : ({ shop: img.shop, kitchen: img.kitchen, shumai: img.bg_shumai, noodle: img.bg_noodle })[b], bgX(), 0, BGI.w * s, H);   // 二品目から = 奥の厨房(同じ大きさ・構図の写真。四品目 = せいろ・六品目 = 麺の鉢)
+    bg.drawImage(boilBg ? img.wok_boil : ({ shop: [img.shop, img.shop_noren, img.shop_lantern][SHOP.look] || img.shop, kitchen: img.kitchen, shumai: img.bg_shumai, noodle: img.bg_noodle, pork: img.bg_pork })[b], bgX(), 0, BGI.w * s, H);   // 二品目から = 奥の厨房(同じ大きさ・構図の写真。四品目 = せいろ・六品目 = 麺の鉢)
     if (!kit) drawMenu(bg);
   }
   function traySlot(i) {                             // 大皿の上。奥の列から 並べる(手前は 手に隠れる)。20 コを超えたら 少しずらして重ねる
@@ -482,14 +495,35 @@
   // 判定の 札(11-27 9 回目。ユウキさん「中国語の 可とか良とかの漢字か、英語で クール・グッド・エクセレント みたいな、音ハメゲームの表示みたいに」)
   // 段 = 優(いちばん)/ 良 / 可(ゆるい・それた = 使えるが 甘い)/ 不可(破れ・空振り = 駄目)。漢字 1〜2 字を 判で押すように 出し、下に 英語の 一語。優・良が 続くと 連の数
   var GR = { H: ['高速', 'HIGH SPEED', RED, '#f3c64b'], S: ['優', 'EXCELLENT', RED, '#f3c64b'], A: ['良', 'GOOD', '#c8611a', PAPER], B: ['可', 'SO-SO', '#857b72', PAPER], F: ['不可', 'MISS', '#4f4943', PAPER] }, combo = 0;
-  function grade(g, x, y, why) { if (g === 'S' || g === 'A') combo++; else combo = 0; pops = pops.filter(function (q) { return !q.g; }); pops.push({ g: g, why: why || '', combo: combo, x: x, y: y, t0: now() }); }
+  // 11-27(14 回目)コンボの 意味(ユウキさん「コンボしたとて 数だけ」)= 熱。5 連 = 火花 + BGM 1 段 / 10 連 = 熱々(チップ 2 倍・大将の一言)/ 20 連 = 神ドリル(チップ 3 倍・金ネジが 出やすい)。可・不可で 冷める。判定の 幅は 変えない
+  var SHOP_KEY = 'gyoza.shop.v1', SHOP = { chips: 0, color: 0, motor: 0, look: 0, goldNext: 0 };
+  try { var sv0 = JSON.parse(localStorage.getItem(SHOP_KEY) || 'null'); if (sv0) for (var sk0 in SHOP) if (sv0[sk0] != null) SHOP[sk0] = +sv0[sk0] || 0; } catch (e) {}
+  function saveShop() { try { localStorage.setItem(SHOP_KEY, JSON.stringify(SHOP)); } catch (e) {} }
+  var run = { chips: 0, heat: 0, maxCombo: 0, gold: 0, usedGold: false }, heatT = -1e9, coolT = -1e9, sparks = [];
+  var HEATM = [1, 1.5, 2, 3];
+  function heatOf(n) { return n >= 20 ? 3 : n >= 10 ? 2 : n >= 5 ? 1 : 0; }
+  function grade(g, x, y, why) {
+    if (g === 'S' || g === 'A') combo++; else combo = 0; pops = pops.filter(function (q) { return !q.g; }); pops.push({ g: g, why: why || '', combo: combo, x: x, y: y, t0: now() });
+    var h = heatOf(combo); if (g === 'S' || g === 'A') run.chips += (g === 'S' ? 2 : 1) * HEATM[h]; run.maxCombo = Math.max(run.maxCombo, combo);
+    if (h > run.heat) { heatT = now(); play(h >= 3 ? 'promo' : 'gear'); haptic('gear'); if (h === 2) say(T('大将「熱々や！ チップ 2 倍」', 'Chef: "Red hot! Double chips!"'), 1600); if (h === 3) say(T('大将「神ドリルや！ 金のネジが 来るで」', 'Chef: "Divine drill! Gold screws incoming!"'), 1800); }
+    else if (h < run.heat) { coolT = now(); play('loose'); }
+    run.heat = h; BGM.fever = h;
+    if (game && game.cfg && STG[S] && STG[S].kind === 'drill' && st === 'PLAY') game.cfg.goldK = h >= 3 ? Math.max(3, game.baseGoldK || 1) : game.baseGoldK || 1;
+  }
   function puff(x, y, n, sp) { for (var i = 0; i < n; i++) { var a = Math.random() * 6.283, v = sp * (0.3 + Math.random()); parts.push({ k: 'flour', x: x, y: y, vx: Math.cos(a) * v, vy: Math.sin(a) * v * 0.5 - 20, r: 8 + Math.random() * 16, t0: now(), life: 420 + Math.random() * 300 }); } }
   function burst(x, y) {
     for (var i = 0; i < 26; i++) { var a = Math.random() * 6.283, v = 250 + Math.random() * 700, c = Math.random(); parts.push({ k: 'bit', x: x, y: y, vx: Math.cos(a) * v, vy: Math.sin(a) * v * 0.6 - 260, r: 5 + Math.random() * 10, col: c < 0.5 ? '#b98f78' : c < 0.72 ? '#7f9c4e' : '#e3d3bf', t0: now(), life: 500 + Math.random() * 400, fy: y + 30 + Math.random() * 260 }); }
   }
 
   // ---- 遊びの出来事 → 絵・音・ふるえ ----
-  function handAt() { var a = handA.x, push = (1 - sq.x) * 150; return { x: HND.x0 - a * 560 - push * DRL.ax, y: H - HND.h * HS + a * 980 - push * DRL.ay }; }
+  function driftX() {                                 // 回転台: 餃子が 右から 左へ 流れていく(打ち終える前に 出ていく)。大将の 投げ餃子: 上から 飛んでくる
+    var D = STG[S]; if (!game || !D || D.kind !== 'drill' || !(st === 'PLAY' || st === 'WAIT')) return 0;
+    if (D.id === 'kaiten' && game.cur && game.cur.limitT != null && !game.cur.result) { var gt = now() - T0, p = clamp(1 - (game.cur.limitT - gt) / game.cfg.limit, 0, 1); return lerp(220, -380, p); }
+    return 0;
+  }
+  function tossY() { if (STG[S] && STG[S].id === 'finale' && st === 'PLAY') { var a = clamp((now() - tossT) / 700, 0, 1); return -(1 - ease(a)) * 900 + Math.sin(a * Math.PI) * -60; } return 0; }
+  var tossT = -1e9;
+  function handAt() { var a = handA.x, push = (1 - sq.x) * 150; return { x: HND.x0 - a * 560 - push * DRL.ax + driftX(), y: H - HND.h * HS + a * 980 - push * DRL.ay + tossY() }; }
   function handle(evs) {
     for (var i = 0; i < evs.length; i++) {
       var e = evs[i], d = game.cur, p;
@@ -504,13 +538,16 @@
         drill.lift.x = e.grade === 'tear' ? 90 : 40;
       } else if (e.type === 'dumpling') {
         goT = now() + (e.result === 'torn' ? 480 : 40);            // 手が 皿のほうへ下がる(破れたら 少し見せてから)
-        if (e.result !== 'torn') { tray.push({ cv: snapshot(e.d), shown: false, d: e.d }); leaving.push({ kind: 'tray', t0: now() + 260, dur: 1, i: tray.length - 1 }); play('slide'); }
+        if (e.result === 'burnt' || e.result === 'gone') { var hb = handAt(); play('spoil'); haptic('loose'); grade('F', 540, hb.y + 40, e.result === 'burnt' ? T('焦げた', 'Burnt') : T('行っちゃった', 'Gone')); }
+        else if (e.bonus) { play('promo'); grade('S', 540, handAt().y - 40, T('金ネジ +' + e.bonus, 'Gold screw +' + e.bonus)); }
+        if (e.result !== 'torn' && e.result !== 'burnt' && e.result !== 'gone') { tray.push({ cv: snapshot(e.d), shown: false, d: e.d }); leaving.push({ kind: 'tray', t0: now() + 260, dur: 1, i: tray.length - 1 }); play('slide'); }
       } else if (e.type === 'spawn') { vis[e.d.id] = { inT: now() }; sq.t = 1; }
       else if (e.type === 'stage') {
         play('boss');
-        if (e.stage === 1) { say(T('大将「湯が沸いてきた！ ネジは 4 本」', 'Chef: "Water\'s nearly boiling! Four screws each!"')); voice('stage1'); bgmLayer(1); }
+        var LN = STG[S].lines;
+        if (e.stage === 1) { say(LN ? T(LN[0][0], LN[0][1]) : T('大将「湯が沸いてきた！ ネジは 4 本」', 'Chef: "Water\'s nearly boiling! Four screws each!"')); voice('stage1'); bgmLayer(1); }
         else {      // 30 秒: 店が開く = ドリルを 高速へ(11-27「のれん出すで！ ハイにせえ」が 伝わらなかったので 言い直し + 右上の札が 高速に変わる)
-          say(T('大将「開店や！ 次のネジから ドリルは高速だ」', 'Chef: "We\'re open! High speed from the next screw!"'), 2800); voice('stage2'); play('gear'); play('gong'); haptic('gear'); drill.gearK.t = 1; bgmLayer(2); hiFlash = now();
+          say(LN ? T(LN[1][0], LN[1][1]) : T('大将「開店や！ 次のネジから ドリルは高速だ」', 'Chef: "We\'re open! High speed from the next screw!"'), 2800); voice('stage2'); play('gear'); play('gong'); haptic('gear'); if (game.gear() > 1) { drill.gearK.t = 1; hiFlash = now(); } bgmLayer(2);
         }
       } else if (e.type === 'timeup') { play('whistle'); }
       else if (e.type === 'end') finish(e.kind);
@@ -518,78 +555,103 @@
   }
   function findD(id) { if (game.cur && game.cur.id === id) return game.cur; for (var i = 0; i < game.done.length; i++) if (game.done[i].id === id) return game.done[i]; return game.cur; }
 
-  // ================= 修業(面・肩書き・工具掛け)=================
-  // 話(11-27、Codex と 3 回相談して決めた): ネジで閉めた水餃子を 常連に気に入られた 町中華の見習いが、宴会の注文を ひと皿ずつ 自分の工具で仕上げて 肩書きを上げていく。
-  // 面 = 料理 1 つ + 工具 1 つ(動きも 1 つ)。初めて合格すると 工具が 工具掛けに掛かり、肩書きが 1 段上がる。
-  var LV = [['見習い', 'Apprentice'], ['餃子番', 'Dumpling Cook'], ['前菜係', 'Starter Cook'], ['点心係', 'Dim Sum Cook'], ['仕込み頭', 'Prep Lead'], ['蒸し場担当', 'Steamer Chief'], ['薬味番', 'Garnish Cook'], ['揚げ場担当', 'Fry Chief'], ['料理長', 'Head Chef']];   // 11-27: 8 品 → 9 段
+  // ================= 修業(面・肩書き・餃子帳)=================
+  // 11-27(14 回目)餃子だけ(設計 = docs/2026-11-27_gyoza_only_design.md の v2。ユウキさん「ドリル餃子が いちばん面白い」→ 料理は 餃子だけ)
+  // 話: ネジで閉じた水餃子が 常連に うけた 見習いは、餡を 仕込み、蒸し場と 焼き場を 任され、最後に 大将の 巨大餃子を 閉じて 二代目料理長になる。
+  var LV = [['ネジ見習い', 'Screw Apprentice'], ['仕込み係', 'Prep Cook'], ['一口番', 'Bite-Size Cook'], ['工場番', 'Line Cook'], ['蒸し方', 'Steamer'], ['焼き方', 'Griddle Cook'], ['点心頭', 'Dim Sum Lead'], ['餃子名人', 'Gyoza Master'], ['二代目料理長', 'Head Chef II']];
   var STG = [
-    { kind: 'drill', bg: 'kitchen', no: ['一品目', 'Order 1'], dish: ['ネジ水餃子', 'Screwed Dumplings'], tool: ['電動ドリル', 'Power drill'], take: ['ドリルを持つ', 'Grab the drill'],
+    { id: 'mizu', kind: 'drill', bg: 'kitchen', mode: null, song: 'drill', no: ['一皿目', 'Order 1'], dish: ['ネジ水餃子', 'Screwed Boiled Gyoza'], tool: ['電動ドリル', 'Power drill'], take: ['ドリルを持つ', 'Grab the drill'],
       who: ['大将', 'Chef'], line: ['お前の包んだのは 茹でたら開く。ネジで 閉めとけ', 'Yours pop open in the pot. Screw them shut.'], voice: 'open',
       how: ['長押しで ネジを締める。頭が皮に沈んだら 離す', 'Hold to drive the screw. Let go when the head sinks in.'],
-      goal: ['開かずに 茹で上がった 餃子', 'Dumplings that stay shut when boiled'], unit: ['コ', ''], quota: 5, best: ['最高 ', 'Best '] },
-    { kind: 'smash', bg: 'kitchen', no: ['二品目', 'Order 2'], dish: ['叩ききゅうり', 'Smashed Cucumber'], tool: ['金づち', 'Hammer'], take: ['金づちを持つ', 'Grab the hammer'],
-      who: ['大将', 'Chef'], line: ['まかないの 前菜は 叩ききゅうりや。金づちで ひびを 入れろ', 'Staff meal starter: smashed cucumber. Crack it with a hammer.'],
-      how: ['赤い印を 一回ずつ 叩く。同じ所を 二回 叩くと つぶれる', 'Tap each red mark once. Hit the same spot twice and it turns to mush.'],
-      goal: ['ひびの入った きゅうり', 'Cracked cucumbers'], unit: ['本', ''], quota: 8, best: ['最高 ', 'Best '] },
-    { kind: 'staple', bg: 'kitchen', no: ['三品目', 'Order 3'], dish: ['三つ留め春巻', 'Triple-Stapled Spring Rolls'], tool: ['ホッチキス', 'Stapler'], take: ['ホッチキスを持つ', 'Grab the stapler'],
-      who: ['常連', 'Regular'], line: ['ネジの餃子 うまかった。今度の宴会、春巻も 頼めるか？', 'Loved those screwed dumplings. Spring rolls for my party, too?'],
-      how: ['赤い印が ホッチキスの口の真下に来たら タップ', 'Tap when a red mark is right under the stapler.'],
-      goal: ['3 か所 留めた春巻', 'Rolls stapled 3 times'], unit: ['本', ''], quota: 5, best: ['最高 ', 'Best '] },
-    { kind: 'cut', bg: 'kitchen', no: ['四品目', 'Order 4'], dish: ['干し豆腐の細切り', 'Shredded Tofu Skin'], tool: ['カッターと金尺', 'Knife & steel rule'], take: ['カッターを持つ', 'Grab the knife'],
-      who: ['幹事', 'Party host'], line: ['冷菜も 味見させて。細く まっすぐ 頼むよ', 'Let me taste a cold dish too. Thin and straight, please.'],
-      how: ['赤い輪に 指を置いて、点線を 反対の輪まで なぞる(途中で 離しても 続きから)', 'Put your finger on a red ring and trace the dotted line to the other ring (you can lift and continue).'],
-      goal: ['まっすぐな細切り', 'Straight strips'], unit: ['本', ''], quota: 12, best: ['最高 ', 'Best '] },
-    // 11-27: 宴会の当日(土曜・六名)。四〜六品目 + 大将の 最後の一言(料理長へ)
-    { kind: 'caulk', bg: 'shumai', no: ['五品目', 'Order 5'], dish: ['花焼売', 'Flower Shumai'], tool: ['コーキングガン', 'Caulking gun'], take: ['コーキングガンを持つ', 'Grab the caulking gun'],
-      who: ['幹事', 'Party host'], line: ['宴会 当日や。六名分、焼売は 花の形で 頼むよ', 'Party day, six of us. Make the shumai look like flowers.'],
-      how: ['指を置いたまま 花の点線を 一周なぞって 餡を絞る', 'Keep your finger down and trace the flower outline once to pipe the filling.'],
-      goal: ['花の形の焼売', 'Flower shumai'], unit: ['コ', ''], quota: 9, best: ['最高 ', 'Best '] },
-    { kind: 'kanna', bg: 'kitchen', no: ['六品目', 'Order 6'], dish: ['白髪ねぎ', 'Shredded Leek'], tool: ['かんな', 'Hand plane'], take: ['かんなを両手で持つ', 'Grab the plane with both hands'],
-      who: ['大将', 'Chef'], line: ['締めの麺に 白髪ねぎが要る。大工の かんなで 薄く削げ', 'The noodles need shredded leek. Shave it thin with a carpenter\'s plane.'],
-      how: ['かんなを 両手で 持って、手前に 引く(2 本の指で 左右の取っ手)', 'Hold the plane with both hands (two fingers on the two grips) and pull it toward you.'],
-      goal: ['薄く削いだ 白髪ねぎ', 'Thin leek shreds'], unit: ['枚', ''], quota: 12, best: ['最高 ', 'Best '] },
-    { kind: 'saw', bg: 'kitchen', no: ['七品目', 'Order 7'], dish: ['骨付きスペアリブ', 'Spare Ribs'], tool: ['のこぎり', 'Pull saw'], take: ['のこぎりを持つ', 'Grab the saw'],
-      who: ['幹事', 'Party host'], line: ['メインは 揚げたスペアリブや。骨ごと 切り分けて', 'The main is fried spare ribs. Cut them, bones and all.'],
-      how: ['鉛筆の線に 指を置いて、上下に 往復させて 切る', 'Put your finger on the pencil line and saw up and down.'],
-      goal: ['切り分けた スペアリブ', 'Ribs cut'], unit: ['本', ''], quota: 9, best: ['最高 ', 'Best '] },
-    { kind: 'crank', bg: 'noodle', no: ['八品目', 'Order 8'], dish: ['ねじり葱そば', 'Twisted Leek Noodles'], tool: ['手回しドリル', 'Hand drill'], take: ['手回しドリルを持つ', 'Grab the hand drill'],
-      who: ['常連', 'Regular'], line: ['締めは 麺や。ひと口ずつ 巻いて 出してくれ', 'Noodles to finish. Twist them into bites for us.'],
-      how: ['指で 右回りに 円を描いて ハンドルを回す。速すぎると 麺が切れる', 'Draw circles clockwise to turn the crank. Too fast and the noodles snap.'],
-      goal: ['巻きつけた そばの ひと口', 'Twisted noodle bites'], unit: ['口', ''], quota: 8, best: ['最高 ', 'Best '] }
+      goal: ['開かずに 茹で上がった 餃子', 'Gyoza that stay shut when boiled'], unit: ['コ', ''], count: ['餃子', 'Gyoza'], best: ['最高 ', 'Best '], book: 'dumpling',
+      cfg: G.VARIANTS.mizu },
+    { id: 'prep', kind: 'prep', bg: 'kitchen', song: 'caulk', no: ['仕込み', 'Prep'], dish: ['餃子の餡と皮', 'Filling & Wrappers'], tool: ['かんな・手回しドリル・コーキングガン', 'Plane, hand drill & caulking gun'], take: ['仕込みを始める', 'Start prepping'],
+      who: ['大将', 'Chef'], line: ['ネジは 合格や。次は 仕込み。キャベツを刻んで、餡を練って、皮に 絞れ', 'Screws pass. Now prep: shred the cabbage, knead the filling, pipe it onto the wrappers.'],
+      how: ['3 つの工程を 続けて: かんな → 手回しドリル → コーキングガン', 'Three steps in a row: plane → hand drill → caulking gun'],
+      goal: ['仕込みの 工程', 'Prep steps'], unit: ['つ', ''], count: ['工程', 'Steps'], best: ['最高 ', 'Best '], book: 'fball', quota: 3,
+      steps: [{ k: 'kanna', quota: 4, time: 16000, count: ['キャベツ', 'Cabbage'], how: ['① キャベツを かんなで 千切り(指 2 本で 取っ手 → 手前へ)', '1. Shred the cabbage with the plane (two fingers on the grips, pull)'] },
+        { k: 'crank', quota: 3, time: 16000, count: ['餡', 'Filling'], how: ['② 手回しドリルで 餡を練る(右回りの 円・速すぎると ちぎれる)', '2. Knead the filling with the hand drill (clockwise circles, not too fast)'] },
+        { k: 'caulk', quota: 3, time: 18000, count: ['皮', 'Wrappers'], how: ['③ 皮の 真ん中に コーキングガンで 餡を 絞る(丸を 一周)', '3. Pipe the filling onto the wrapper (trace the circle once)'] }] },
+    { id: 'hitokuchi', kind: 'drill', bg: 'kitchen', mode: 'front', song: 'smash', no: ['二皿目', 'Order 2'], dish: ['一口餃子', 'Bite-Size Gyoza'], tool: ['電動ドリル', 'Power drill'], take: ['ドリルを持つ', 'Grab the drill'],
+      who: ['常連', 'Regular'], line: ['ビールの あてに 一口餃子。ちっちゃいのを どんどん 頼む', 'Bite-size gyoza with my beer. Keep the little ones coming.'],
+      how: ['短いネジ 2 本ずつ。トン、トンと 続けて 締める', 'Two short screws each. Tap-tap, keep the rhythm.'],
+      goal: ['一口餃子', 'Bite-size gyoza'], unit: ['コ', ''], count: ['一口餃子', 'Bites'], best: ['最高 ', 'Best '], book: 'dumpling',
+      lines: [['常連「おかわり！ もっと 速く」', 'Regular: "More! Faster!"'], ['大将「混んできた。高速で 回せ」', 'Chef: "It\'s busy. High speed!"']],
+      cfg: G.VARIANTS.hitokuchi },
+    { id: 'factory', kind: 'staple', bg: 'kitchen', song: 'staple', no: ['三皿目', 'Order 3'], dish: ['餃子工場', 'Gyoza Factory'], tool: ['ホッチキス', 'Stapler'], take: ['ホッチキスを持つ', 'Grab the stapler'],
+      who: ['大将', 'Chef'], line: ['宴会の 予約や。百個 いる。流れてくる 餃子の とじ目を ホッチキスで 留めろ', 'Banquet booking: we need a hundred. Staple the seams as they roll past.'],
+      how: ['赤い印が ホッチキスの口の真下に来たら タップ(だんだん 速くなる)', 'Tap when a red mark is right under the stapler (it speeds up).'],
+      goal: ['3 か所 留めた 餃子', 'Gyoza stapled 3 times'], unit: ['コ', ''], count: ['餃子', 'Gyoza'], best: ['最高 ', 'Best '], book: 'hand_stapler', quota: 6 },
+    { id: 'ebi', kind: 'drill', bg: 'kitchen', mode: 'front', song: 'cut', no: ['四皿目', 'Order 4'], dish: ['エビ蒸し餃子', 'Steamed Shrimp Gyoza'], tool: ['電動ドリル', 'Power drill'], take: ['ドリルを持つ', 'Grab the drill'],
+      who: ['大将', 'Chef'], line: ['蒸し場を 任す。エビの 皮は 透けるほど 薄い。急がんでええ、破るな', 'You\'re on the steamer. Shrimp wrappers are paper thin. No rush — just don\'t tear them.'],
+      how: ['いつも 薄皮。ぴたっの 幅が 狭い。ゆっくり 確かに', 'Always thin skin, a narrow sweet spot. Slow and sure.'],
+      goal: ['破れずに 蒸し上がった エビ餃子', 'Shrimp gyoza steamed intact'], unit: ['コ', ''], count: ['エビ餃子', 'Shrimp gyoza'], best: ['最高 ', 'Best '], book: 'ebi',
+      lines: [['大将「湯気が 上がってきた」', 'Chef: "The steam\'s up."'], ['大将「せいろを 開けるで。高速や」', 'Chef: "Opening the steamer. High speed."']],
+      cfg: G.VARIANTS.ebi },
+    { id: 'yaki', kind: 'drill', bg: 'kitchen', mode: 'side', song: 'saw', no: ['五皿目', 'Order 5'], dish: ['羽根つき焼き餃子', 'Pan-Fried Winged Gyoza'], tool: ['電動ドリル(斜め)', 'Power drill (angled)'], take: ['ドリルを持つ', 'Grab the drill'],
+      who: ['大将', 'Chef'], line: ['焼き場も 任す。1 コずつ 焦げる前に 打ち終えろ', 'The griddle is yours. Finish each one before it burns.'],
+      how: ['斜めから 打つ。1 コごとに 焼き時計。焦げる前に 全部 締める', 'Angled shots. Each gyoza has a burn clock — finish before it browns too far.'],
+      goal: ['焦がさず 焼けた 餃子', 'Gyoza fried without burning'], unit: ['コ', ''], count: ['焼き餃子', 'Fried gyoza'], best: ['最高 ', 'Best '], book: 'yaki',
+      lines: [['大将「油が 回ってきた。早よ せえ」', 'Chef: "The oil\'s hot. Hurry."'], ['大将「羽根が 付く。高速で 仕上げ」', 'Chef: "The wings are forming. High speed!"']],
+      cfg: G.VARIANTS.yaki },
+    { id: 'kaiten', kind: 'drill', bg: 'kitchen', mode: 'front', song: 'kanna', no: ['六皿目', 'Order 6'], dish: ['回転台の 餃子', 'Lazy Susan Gyoza'], tool: ['電動ドリル', 'Power drill'], take: ['ドリルを持つ', 'Grab the drill'],
+      who: ['常連', 'Regular'], line: ['円卓が 回っとるうちに 締めてくれ。金のネジは 縁起物や', 'Screw them shut while the table turns. Gold screws bring luck.'],
+      how: ['餃子は 横へ 流れていく。出ていく前に 締める。金ネジ = 2 コ分、錆びネジ = 重い', 'Gyoza drift sideways — finish before they leave. Gold screw = counts double, rusty = heavy.'],
+      goal: ['回る前に 締めた 餃子', 'Gyoza closed before they spun away'], unit: ['コ', ''], count: ['餃子', 'Gyoza'], best: ['最高 ', 'Best '], book: 'dumpling',
+      lines: [['常連「回すで〜」', 'Regular: "Spinning!"'], ['常連「もっと 速く 回すで！」', 'Regular: "Faster now!"']],
+      cfg: G.VARIANTS.kaiten },
+    { id: 'kyodai', kind: 'drill', bg: 'kitchen', mode: 'front', song: 'crank', no: ['七皿目', 'Order 7'], dish: ['巨大餃子', 'Giant Gyoza'], tool: ['電動ドリル', 'Power drill'], take: ['ドリルを持つ', 'Grab the drill'],
+      who: ['大将', 'Chef'], line: ['わしの 前で 巨大餃子を 閉じてみい。長いのと 短いの、読み分けや', 'Close a giant gyoza in front of me. Long screws, short ones — read each one.'],
+      how: ['1 コに ネジ 6〜8 本。長さが ばらばら。1 本ずつ 押す長さを 読み直す', 'Six to eight screws per gyoza, all different lengths. Re-read every one.'],
+      goal: ['閉じた 巨大餃子', 'Giant gyoza closed'], unit: ['コ', ''], count: ['巨大餃子', 'Giant gyoza'], best: ['最高 ', 'Best '], book: 'dumpling',
+      lines: [['大将「まだまだ」', 'Chef: "Keep going."'], ['大将「最後や。高速で 決めろ」', 'Chef: "Last stretch. High speed."']],
+      cfg: G.VARIANTS.kyodai },
+    { id: 'finale', kind: 'drill', bg: 'kitchen', mode: 'front', song: 'crank', no: ['大将の 試し', 'The Chef\'s Test'], dish: ['大将の 投げ餃子', 'The Chef\'s Toss'], tool: ['電動ドリル', 'Power drill'], take: ['構える', 'Ready'],
+      who: ['大将', 'Chef'], line: ['最後に わしが 一つ 投げる。空中で 一発で 閉じてみい', 'One last thing: I toss one gyoza. Close it in mid-air, one shot.'],
+      how: ['1 本だけ・高速。投げられた 餃子に 一発', 'One screw, high speed, mid-air. One shot.'],
+      goal: ['一発で 閉じる', 'Close it in one shot'], unit: ['コ', ''], count: ['一発', 'Shot'], best: ['最高 ', 'Best '], book: 'dumpling',
+      cfg: G.VARIANTS.finale }
   ];
-  // この先(写真を作ってから。いまは 工具掛けに 輪郭と「？」だけ)
-  var FUTURE = [];        // 11-27: 六品目まで そろった(前は ここに この先の 3 つ)
-  var TOOLK = ['drill', 'smash', 'staple', 'cut', 'caulk', 'kanna', 'saw', 'crank'];
-  // 進み = 料理の種類ごと(11-27 に 面を 8 つに 並べ直した。前の v1 は 面の番号順 = drill, staple, cut, caulk, kanna, crank → 種類へ 写す)
-  var PROG_KEY = 'gyoza.progress.v2', PROG = { clear: [], best: [] };
-  STG.forEach(function () { PROG.clear.push(false); PROG.best.push(0); });
+  var FUTURE = [];
+  var BOOK = STG.map(function (D) { return D.book; });
+  // 進み = 面の id ごと(v3)。v2(前の 8 品)からは: 水餃子 = drill、工場 = staple、肩書きは 合格した 数だけ 前から 埋める(同じ 段に なる)
+  var GOLDC = [];       // 金の札(面ごと。その面で ぴたっ 9 割以上を 一度でも)
+  var PROG_KEY = 'gyoza.progress.v3', PROG = { clear: [], best: [], open: [] };
+  STG.forEach(function () { PROG.clear.push(false); PROG.best.push(0); PROG.open.push(false); });
   try {
     var pv = JSON.parse(localStorage.getItem(PROG_KEY) || 'null'), by = {};
-    if (pv && pv.kinds) by = pv.kinds;
-    else { var v1 = JSON.parse(localStorage.getItem('gyoza.progress.v1') || 'null'); if (v1 && v1.clear) ['drill', 'staple', 'cut', 'caulk', 'kanna', 'crank'].forEach(function (k, j) { by[k] = { c: !!v1.clear[j], b: +(v1.best && v1.best[j]) || 0 }; }); }
-    STG.forEach(function (D, j) { if (by[D.kind]) { PROG.clear[j] = !!by[D.kind].c; PROG.best[j] = +by[D.kind].b || 0; } });
+    if (pv && pv.ids) by = pv.ids;
+    else {
+      var p2 = JSON.parse(localStorage.getItem('gyoza.progress.v2') || 'null'), old = p2 && p2.kinds ? p2.kinds : null;
+      if (!old) { var v1 = JSON.parse(localStorage.getItem('gyoza.progress.v1') || 'null'); if (v1 && v1.clear) { old = {}; ['drill', 'staple', 'cut', 'caulk', 'kanna', 'crank'].forEach(function (k, j) { old[k] = { c: !!v1.clear[j], b: +(v1.best && v1.best[j]) || 0 }; }); } }
+      if (old) { var n2 = 0; for (var ok2 in old) if (old[ok2] && old[ok2].c) n2++; for (var j2 = 0; j2 < Math.min(n2, 8); j2++) by[STG[j2].id] = { c: true, b: 0 };
+        if (old.drill) by.mizu = { c: !!old.drill.c || !!(by.mizu && by.mizu.c), b: +old.drill.b || 0 }; if (old.staple && old.staple.c) by.factory = { c: true, b: +old.staple.b || 0 }; }
+    }
+    STG.forEach(function (D, j) { if (by[D.id]) { PROG.clear[j] = !!by[D.id].c; PROG.best[j] = +by[D.id].b || 0; PROG.open[j] = !!by[D.id].o; GOLDC[j] = !!by[D.id].g; } });
   } catch (e) {}
-  function saveProg() { var k = {}; STG.forEach(function (D, j) { k[D.kind] = { c: PROG.clear[j], b: PROG.best[j] }; }); try { localStorage.setItem(PROG_KEY, JSON.stringify({ kinds: k })); } catch (e) {} }
-  function lvNow() { var n = 0; for (var i = 0; i < STG.length; i++) if (PROG.clear[i]) n++; return n; }
-  function unlocked(i) { return i === 0 || PROG.clear[i - 1] || PROG.clear[i]; }   // 一度 合格した面は 前の面が まだでも 遊べる(面を 足した時の 引き継ぎ)
-  function nextStage() { for (var i = 0; i < STG.length; i++) if (!PROG.clear[i]) return i; return -1; }      // -1 = 今ある注文は 全部合格
+  function saveProg() { var k = {}; STG.forEach(function (D, j) { k[D.id] = { c: PROG.clear[j], b: PROG.best[j], o: PROG.open[j], g: !!GOLDC[j] }; }); try { localStorage.setItem(PROG_KEY, JSON.stringify({ ids: k })); } catch (e) {} }
+  function lvNow() { var n = 0; for (var i = 0; i < 8; i++) if (PROG.clear[i]) n++; return Math.min(n, LV.length - 1); }
+  function unlocked(i) { return i === 0 || PROG.clear[i - 1] || PROG.clear[i] || PROG.open[i]; }   // 一度 合格した面・店で 先に開けた面は 遊べる
+  function nextStage() { for (var i = 0; i < STG.length; i++) if (!PROG.clear[i]) return i; return -1; }      // -1 = 全部合格
   var S = 0;                                                    // いまの面
   if (+Q.get('stage') >= 1 && +Q.get('stage') <= STG.length) S = +Q.get('stage') - 1; else S = Math.max(0, nextStage());
+  function stageQuota(D) { return D.cfg ? D.cfg.quota : D.quota; }
+  function stageCfg(D) { var c = JSON.parse(JSON.stringify(D.cfg)); if (SHOP.goldNext > 0 && c.goldP) { c.goldK = 2; } return c; }
   var mini = null, hiFlash = -1e9;                              // mini = 2・3 面の 遊びと 見た目
 
   // ---- 題名の画面: 看板・肩書きの札・次の注文 ----
   function fillTitle() {
     var n = lvNow(), nx = nextStage();
     $('rank').querySelector('.lv').textContent = 'Lv.' + (n + 1); $('rank').querySelector('.nm').textContent = T(LV[n][0], LV[n][1]); $('rank').querySelector('.go').textContent = '';
-    $('rank').setAttribute('aria-label', T('肩書き ' + LV[n][0] + '。工具掛けを開く', 'Rank: ' + LV[n][1] + '. Open the tool wall'));
-    titleEl.querySelector('p').textContent = nx >= 0 ? T('次の注文　' + STG[nx].dish[0] + '（' + STG[nx].tool[0] + '）', 'Next order: ' + STG[nx].dish[1] + ' (' + STG[nx].tool[1].toLowerCase() + ')') : T('土曜の宴会に つづく', 'To be continued at Saturday\'s banquet');
+    $('rank').setAttribute('aria-label', T('肩書き ' + LV[n][0] + '。餃子帳を開く', 'Rank: ' + LV[n][1] + '. Open the gyoza book'));
+    titleEl.querySelector('p').textContent = (nx >= 0 ? T('次の注文　' + STG[nx].dish[0], 'Next order: ' + STG[nx].dish[1]) : T('二代目料理長。今日の 一皿を 選ぶ', 'Head Chef II. Pick today\'s dish')) + T('　チップ ' + SHOP.chips, '  Chips ' + SHOP.chips);
     $('b-in').textContent = nx >= 0 ? T('次の注文へ', 'Next order') : T('注文を選ぶ', 'Pick an order');
-    $('b-board').textContent = T('工具掛け', 'Tool wall'); $('b-set').textContent = T('設定', 'Settings');
+    $('b-board').textContent = T('餃子帳', 'Gyoza book'); $('b-set').textContent = T('設定', 'Settings'); $('b-shop').textContent = T('店', 'Shop');
   }
   function toTitle() {
-    st = 'TITLE'; nativeScreen('title'); mini = null; game = new G.Game(1); vis = {}; vis[0] = { inT: -1000 }; tray = []; boil = null; endKind = null; S = Math.max(0, nextStage());
+    PREP = null; st = 'TITLE'; nativeScreen('title'); mini = null; game = new G.Game(1); vis = {}; vis[0] = { inT: -1000 }; tray = []; boil = null; endKind = null; S = Math.max(0, nextStage());
     resEl.classList.remove('on'); cardEl.classList.remove('on'); titleEl.classList.remove('off'); startEl.classList.remove('off'); hintEl.classList.remove('on'); bossEl.classList.remove('on');
-    fillTitle(); drawBg(); bgmLayer(0); bgmSong('drill');
+    SET_MODE_STAGE = null; setMode(); fillTitle(); drawBg(); bgmLayer(0); bgmSong('drill');
   }
 
   // ---- 伝票(面の前): 何を・何で・誰の注文か・どう動かすか・いくつ ----
@@ -599,13 +661,13 @@
     cardEnd = i >= STG.length;
     if (!cardEnd) S = i;
     st = 'CARD'; nativeScreen('title'); mini = null;
-    if (!cardEnd && STG[i].kind !== 'drill') mini = SCN[STG[i].kind].start(1);   // 伝票の後ろに 工具を見せておく(まだ動かない)
+    if (!cardEnd && STG[i].kind !== 'drill') mini = SCN[STG[i].kind].start(1, STG[i]);   // 伝票の後ろに 工具を見せておく(まだ動かない)
     else { game = new G.Game(1); vis = {}; vis[0] = { inT: -1000 }; drill.away = 0; endKind = null; } tray = []; boil = null; resEl.classList.remove('on'); titleEl.classList.add('off'); startEl.classList.add('off'); bossEl.classList.remove('on'); drawBg();
     if (cardEnd) {      // 六品目のあと = 宴会が はねて、大将の 最後の一言(料理長へ)
-      $('c-no').textContent = T('宴会のあと', 'After the party'); $('c-dish').textContent = T('料理長', 'Head Chef');
-      $('c-tool').innerHTML = T('工具 <b>8 つ</b> が そろった', '<b>All eight tools</b> on the wall'); $('c-who').textContent = T('大将', 'Chef'); $('c-line').textContent = T('明日から お前が 包め。この店の 料理長や', 'From tomorrow, you\'re cooking. You\'re head chef now.');
-      $('c-how').textContent = T('ドリルから 始まった 修業、おしまい', 'It all started with a drill. The end.'); $('c-goal').textContent = '';
-      $('c-go').textContent = T('工具掛けを見る', 'See the tool wall'); $('c-back').textContent = T('題名へ', 'Title');
+      $('c-no').textContent = T('暖簾分け', 'Graduation'); $('c-dish').textContent = T('二代目料理長', 'Head Chef II');
+      $('c-tool').innerHTML = T('餃子帳 <b>9 皿</b> が そろった', '<b>All nine dishes</b> in the gyoza book'); $('c-who').textContent = T('大将', 'Chef'); $('c-line').textContent = T('明日から お前が 包め。この店の 二代目や', 'From tomorrow, you\'re cooking. You\'re the second head chef.');
+      $('c-how').textContent = T('ネジ 一本から 始まった 修業、おしまい。チップで 店を 育てよう', 'It all started with one screw. Spend your chips on the shop.'); $('c-goal').textContent = '';
+      $('c-go').textContent = T('餃子帳を見る', 'See the gyoza book'); $('c-back').textContent = T('題名へ', 'Title');
       voice('rank1'); play('gong');
     } else {
       var D = STG[i];
@@ -613,6 +675,7 @@
       $('c-tool').innerHTML = T('道具 <b>' + D.tool[0] + '</b>', 'Tool: <b>' + D.tool[1] + '</b>');
       $('c-who').textContent = T(D.who[0], D.who[1]); $('c-line').textContent = T(D.line[0], D.line[1]); $('c-how').textContent = T(D.how[0], D.how[1]);
       $('c-goal').innerHTML = T(D.goal[0] + ' <span>' + D.quota + ' ' + D.unit[0] + '</span> で 合格', D.goal[1] + ': <span>' + D.quota + '</span> to pass');
+      $('c-goal').innerHTML = T(D.goal[0] + ' <span>' + stageQuota(D) + ' ' + D.unit[0] + '</span> で 合格', D.goal[1] + ': <span>' + stageQuota(D) + '</span> to pass');
       $('c-go').textContent = T(D.take[0], D.take[1]); $('c-back').textContent = T('もどる', 'Back');
       if (D.voice) voice(D.voice); else play('boss');
     }
@@ -625,16 +688,18 @@
     audioOn(); if (st !== 'TITLE' && st !== 'RESULT' && st !== 'CARD') return;
     boardOpen(false); setOpen(false);
     runs++; seed = +(Q.get('seed') || 0) || (Math.floor(Math.random() * 1e9) + 1);
-    T0 = now(); parts = []; pops = []; combo = 0; leaving = []; stains = []; tray = []; boil = null; endKind = null; mini = null; hiFlash = -1e9;
+    T0 = now(); parts = []; pops = []; combo = 0; sparks = []; BGM.fever = 0; heatT = coolT = -1e9; leaving = []; stains = []; tray = []; boil = null; endKind = null; mini = null; hiFlash = -1e9;
     cardEl.classList.remove('on'); resEl.classList.remove('on'); startEl.classList.add('off'); titleEl.classList.add('off'); bossEl.classList.remove('on'); bgmLayer(0);
-    var D = STG[S]; bgmSong(D.kind);
+    var D = STG[S]; PREP = null; bgmSong(D.song || 'drill'); run = { chips: 0, heat: 0, maxCombo: 0, gold: 0, usedGold: SHOP.goldNext > 0 };
     hintEl.firstChild.textContent = T(D.how[0], D.how[1]); hintEl.classList.add('on');
     if (D.kind === 'drill') {
-      game = new G.Game(seed); vis = {}; vis[0] = { inT: now() - 1000 };
+      SET_MODE_STAGE = D.mode || null; setMode();
+      game = new G.Game(seed, stageCfg(D)); game.baseGoldK = game.cfg.goldK || 1; if (run.usedGold) { SHOP.goldNext--; saveShop(); }
+      vis = {}; vis[0] = { inT: now() - 1000 }; tossT = D.id === 'finale' ? now() : -1e9;
       drill.away = 0; drill.gearK.t = 0; drill.gearK.x = 0; drill.rpm = 0; sq.t = 1; sq.x = 1;
       st = 'PLAY'; menuHung = false;
     } else {
-      mini = SCN[D.kind].start(seed); st = 'MINI';
+      mini = SCN[D.kind].start(seed, D); st = 'MINI';
     }
     drawBg(); nativeScreen('play');
   }
@@ -642,6 +707,7 @@
     endKind = kind; endT = now(); hintEl.classList.remove('on'); drillSound(0, 0, 1);
     if (kind === 'fired') { st = 'OUT'; say(T('大将「ドリル置け。皿洗いや」', 'Chef: "Drop the drill. Go wash dishes."'), 1500); voice('fired_say'); haptic('bad'); }
     else if (kind === 'idle') { st = 'OUT'; }
+    else if (kind === 'shot' || STG[S].id === 'finale') { st = 'OUT'; }
     else if (!game.done.length) { st = 'OUT'; }
     else { st = 'WAIT'; say(T('大将「湯が沸いた。入れるで」', 'Chef: "It\'s boiling. In they go."'), 1500); voice('wait'); }
   }
@@ -657,12 +723,12 @@
     st = 'BOIL'; drawBg();
   }
   // 皿の講評(その回の出来。肩書きとは別)。[名前 ja, en] は 面ごと、大将の一言と声は 共通
-  var CRIT = { drill: [['点心の神', 'Dim Sum God'], ['餃子大工', 'Dumpling Carpenter']], smash: [['叩きの神', 'Smash God'], ['金づち名人', 'Hammer Hand']],
-    staple: [['春巻の神', 'Spring Roll God'], ['留め職人', 'Staple Master']], cut: [['細切りの神', 'Knife God'], ['金尺の鬼', 'Ruler Demon']], caulk: [['焼売の神', 'Shumai God'], ['絞りの名人', 'Piping Master']],
-    kanna: [['かんなの神', 'Plane God'], ['宮大工', 'Temple Carpenter']], saw: [['骨切りの神', 'Bone-Saw God'], ['大工の棟梁', 'Master Carpenter']], crank: [['麺の神', 'Noodle God'], ['巻きの名人', 'Twist Master']] };
+  var CRIT = { mizu: [['点心の神', 'Dim Sum God'], ['餃子大工', 'Gyoza Carpenter']], prep: [['仕込みの神', 'Prep God'], ['段取り名人', 'Prep Master']], hitokuchi: [['一口の神', 'Bite God'], ['リズム職人', 'Rhythm Hand']],
+    factory: [['工場長', 'Plant Boss'], ['留め職人', 'Staple Master']], ebi: [['蒸しの神', 'Steam God'], ['薄皮の名人', 'Thin-Skin Master']], yaki: [['焼きの神', 'Griddle God'], ['羽根の名人', 'Wing Master']],
+    kaiten: [['円卓の神', 'Turntable God'], ['回し名人', 'Spin Master']], kyodai: [['巨大の神', 'Giant God'], ['読みの名人', 'Master Reader']], finale: [['神の一発', 'Divine Shot'], ['一発屋', 'One-Shot Wonder']] };
   function crit(k, ri) { return ri < 2 ? CRIT[k][ri] : ri === 2 ? ['合格', 'Passed'] : ['ぎりぎり', 'Just made it']; }
-  var LABEL = { drill: ['茹で上がり', 'Cooked'], smash: ['ひびが 入った', 'Cracked just right'], staple: ['3 か所 留まった', 'Stapled three times'], cut: ['まっすぐ 切れた', 'Cut dead straight'],
-    caulk: ['花の形に 絞れた', 'Piped into flowers'], kanna: ['薄く 削げた', 'Shaved thin'], saw: ['骨ごと 切れた', 'Cut through the bone'], crank: ['ひと口に 巻けた', 'Twisted into bites'] };
+  var LABEL = { mizu: ['茹で上がり', 'Cooked'], prep: ['仕込んだ 工程', 'Prep steps done'], hitokuchi: ['茹で上がった 一口', 'Bites cooked'], factory: ['3 か所 留まった', 'Stapled three times'], ebi: ['蒸し上がり', 'Steamed'],
+    yaki: ['焼き上がり', 'Fried'], kaiten: ['回る前に 締めた', 'Closed in time'], kyodai: ['閉じた 巨大餃子', 'Giant gyoza closed'], finale: ['一発', 'One shot'] };
   var CHEF = [['大将「明日から お前が包め」', 'Chef: "You\'re wrapping from tomorrow."'], ['大将「やるやないか」', 'Chef: "Not bad."'], ['大将「まあ 出せる」', 'Chef: "Good enough to serve."'], ['大将「ぎりぎりやな」', 'Chef: "Barely."']];
   var shareText = '', promoFrom = -1;
   // 結果 = 品書きの札(何が いくつ 載ったか・講評・大将の一言・昇格)
@@ -670,31 +736,30 @@
     st = 'RESULT'; nativeScreen('result'); bgmLayer(0); hintEl.classList.remove('on');
     var D = STG[S], k = endKind, big = $('r-big'), rk = $('r-rank'), u = JA ? '<small>' + D.unit[0] + '</small>' : '', c, stat, L;
     big.className = ''; promoFrom = -1; $('r-promo').textContent = '';
-    if (D.kind === 'drill') { c = game.closed; stat = [T('分速 ' + game.perMin() + ' コ', game.perMin() + '/min'), T('ぴたっ ' + game.flush() + '%', 'Flush ' + game.flush() + '%'), T('開いた ' + game.opened + ' コ', 'Burst ' + game.opened)]; }
-    else if (D.kind === 'staple') { c = mini.g.closed; stat = [T('ぴたっ ' + mini.g.flush() + '%', 'Dead-on ' + mini.g.flush() + '%'), T('はみ出た ' + mini.g.spoiled + ' 本', 'Burst ' + mini.g.spoiled)]; }
-    else if (D.kind === 'cut') { c = mini.g.cuts; stat = [T('ぴたっ ' + mini.g.flush() + '%', 'Dead-straight ' + mini.g.flush() + '%'), T('曲がった ' + mini.g.bad + ' 本', 'Crooked ' + mini.g.bad)]; }
-    else if (D.kind === 'smash') { c = mini.g.done; stat = [T('ぴたっ ' + mini.g.flush() + '%', 'Dead-on ' + mini.g.flush() + '%'), T('つぶした ' + mini.g.ruined + ' 本', 'Mushed ' + mini.g.ruined)]; }
-    else if (D.kind === 'saw') { c = mini.g.done; stat = [T('ぴたっ ' + mini.g.flush() + '%', 'Clean ' + mini.g.flush() + '%'), T('がたがた ' + mini.g.bad + ' 本', 'Ragged ' + mini.g.bad)]; }
-    else if (D.kind === 'crank') { c = mini.g.done; stat = [T('切れた ' + mini.g.snaps + ' 回', 'Snapped ' + mini.g.snaps), T('大将の分 ' + mini.g.chefDone + ' 口', "Chef's bites " + mini.g.chefDone)]; }
-    else { c = mini.g.good; stat = [T('ぴたっ ' + mini.g.flush() + '%', 'Perfect ' + mini.g.flush() + '%'), T('失敗 ' + mini.g.bad, 'Ruined ' + mini.g.bad)]; }
+    if (k === 'shot') k = 'clear';                     // 大将の 投げ餃子: 外しても 合格(Codex 案)
+    if (D.kind === 'drill') { c = game.closed; stat = [T('分速 ' + game.perMin() + ' コ', game.perMin() + '/min'), T('ぴたっ ' + game.flush() + '%', 'Flush ' + game.flush() + '%'), D.cfg.limit ? T((D.id === 'yaki' ? '焦げた ' : '行った ') + (game.missed || 0) + ' コ', (D.id === 'yaki' ? 'Burnt ' : 'Gone ') + (game.missed || 0)) : T('開いた ' + game.opened + ' コ', 'Burst ' + game.opened)]; if (game.gold) stat.push(T('金ネジ ' + game.gold, 'Gold ' + game.gold)); }
+    else if (D.kind === 'staple') { c = mini.g.closed; stat = [T('ぴたっ ' + mini.g.flush() + '%', 'Dead-on ' + mini.g.flush() + '%'), T('はみ出た ' + mini.g.spoiled + ' コ', 'Burst ' + mini.g.spoiled)]; }
+    else { c = mini.done || 0; stat = (mini.res || (PREP ? PREP.res : [0, 0, 0])).map(function (r2, j3) { var st2 = D.steps[j3]; return T(st2.count[0] + ' ' + r2 + ' / ' + st2.quota, st2.count[1] + ' ' + r2 + '/' + st2.quota); }); }
+    var earned = Math.floor(run.chips) + (k === 'clear' ? 10 + 5 * S : 0); SHOP.chips += earned; saveShop(); stat.push(T('チップ +' + earned, 'Chips +' + earned));
     $('r-head').textContent = T('本日の品書き', "Today's menu");
     if (k === 'clear') {
-      var ri = G.rank(D.kind === 'cut' ? mini.g.score() : c, D.quota, D.kind === 'drill' ? 0 : mini.g.cfg.top), r = crit(D.kind, ri); $('r-dish').textContent = T(D.dish[0], D.dish[1]); $('r-label').textContent = T(LABEL[D.kind][0], LABEL[D.kind][1]); big.innerHTML = c + u;
+      var ri = D.id === 'finale' ? (c > 0 ? (Math.abs(game.log[0] ? game.log[0].x - 0.065 : 1) < 0.02 ? 0 : 1) : 3) : D.kind === 'prep' ? (c >= 3 ? (mini.res.reduce(function (a, b) { return a + b; }, 0) >= 14 ? 0 : 1) : 3) : G.rank(c, stageQuota(D), D.kind === 'drill' ? D.cfg.quota * 2 : mini.g.cfg.top), r = crit(D.id, ri); $('r-dish').textContent = T(D.dish[0], D.dish[1]); $('r-label').textContent = D.id === 'finale' && !c ? T('外れ… でも 合格や', 'Missed... but you pass') : T(LABEL[D.id][0], LABEL[D.id][1]); big.innerHTML = c + u;
       rk.textContent = T(r[0], r[1]); $('r-line').textContent = T(CHEF[ri][0], CHEF[ri][1]); voice('rank' + (ri + 1)); setStat(stat); play('clear'); play('gong'); haptic('clear');
-      if (S === 0) { menuHung = true; drawBg(); }       // 壁の右端の黄色い短冊に「ネジ水餃子 時価」が 書き足される
+      if (S === 0) { menuHung = true; drawBg(); }
+      if (D.kind === 'drill' && game.flush() >= 90 && game.driven >= 6) { GOLDC[S] = true; saveProg(); }   // 金の札       // 壁の右端の黄色い短冊に「ネジ水餃子 時価」が 書き足される
       if (c > PROG.best[S]) PROG.best[S] = c;
-      if (!PROG.clear[S]) {                             // 初めての合格 = 工具が 工具掛けに掛かり、肩書きが上がる
-        promoFrom = lvNow(); PROG.clear[S] = true;
-        $('r-promo').textContent = T('昇格 ' + LV[promoFrom][0] + ' → ' + LV[promoFrom + 1][0], 'Promoted: ' + LV[promoFrom][1] + ' → ' + LV[promoFrom + 1][1]);
+      if (!PROG.clear[S]) {                             // 初めての合格 = 餃子帳に 書かれ、肩書きが上がる(大将の 試しは 肩書きに 数えない)
+        promoFrom = lvNow(); PROG.clear[S] = true; if (lvNow() === promoFrom) promoFrom = -1;
+        if (promoFrom >= 0) $('r-promo').textContent = T('昇格 ' + LV[promoFrom][0] + ' → ' + LV[promoFrom + 1][0], 'Promoted: ' + LV[promoFrom][1] + ' → ' + LV[promoFrom + 1][1]);
       }
       saveProg();
-      shareText = T('ドリル飯店: ' + D.tool[0] + 'で「' + D.dish[0] + '」' + c + ' ' + D.unit[0] + '。肩書きは「' + LV[lvNow()][0] + '」', 'Drill Diner: ' + c + ' × ' + D.dish[1] + ' with a ' + D.tool[1].toLowerCase() + '. Rank: ' + LV[lvNow()][1]);
+      shareText = T('ドリル飯店:「' + D.dish[0] + '」' + c + ' ' + D.unit[0] + '。肩書きは「' + LV[lvNow()][0] + '」', 'Drill Diner: ' + c + ' × ' + D.dish[1] + '. Rank: ' + LV[lvNow()][1]);
     } else {
       // [品書きに載った物, 説明, 大きい字, 大きい字が言葉か, 一言の所, 一言]
       var ko = u;
       L = { soup: [T('具スープ', 'Filling Soup'), T('ほとんど 開いた', 'Most of them opened'), game.opened + ko, false, '', T('大将「これは スープや」', 'Chef: "That\'s soup now."')],
-        slow: [T(D.dish[0], D.dish[1]), T('足りなかった(' + D.quota + ' ' + D.unit[0] + ' で 合格)', 'Not enough (' + D.quota + ' to pass)'), c + ko, false, T('間に合わず', 'Too slow'), S === 0 ? T('大将「もう 店 開けたで」', 'Chef: "We\'re already open."') : T('大将「宴会に 足りんぞ」', 'Chef: "Not enough for the party."')],
-        fired: [T('品切れ', 'Sold Out'), T('3 コ 破いた', 'Tore three dumplings'), T('没収', 'Confiscated'), true, '', T('大将「具が もったいない」', 'Chef: "Waste of good filling."')],
+        slow: [T(D.dish[0], D.dish[1]), T('足りなかった(' + stageQuota(D) + ' ' + D.unit[0] + ' で 合格)', 'Not enough (' + stageQuota(D) + ' to pass)'), c + ko, false, T('間に合わず', 'Too slow'), S === 0 ? T('大将「もう 店 開けたで」', 'Chef: "We\'re already open."') : T('大将「数が 足りんぞ」', 'Chef: "Not enough."')],
+        fired: [T('品切れ', 'Sold Out'), T((D.cfg ? D.cfg.tears : 3) + ' コ 破いた', 'Tore ' + (D.cfg ? D.cfg.tears : 3) + ' gyoza'), T('没収', 'Confiscated'), true, '', T('大将「具が もったいない」', 'Chef: "Waste of good filling."')],
         idle: [T('品切れ', 'Sold Out'), T(D.tool[0] + 'を持って 立っていた', 'Stood there holding a ' + D.tool[1].toLowerCase()), '…', true, '', T('大将「…何しとんねん」', 'Chef: "...What are you doing?"')] }[k];
       $('r-dish').textContent = L[0]; $('r-label').textContent = L[1]; big.innerHTML = L[2]; if (L[3]) big.className = 'word';
       rk.textContent = L[4]; $('r-line').textContent = L[5]; voice(k); setStat(k === 'idle' ? [] : stat); play('over'); haptic('bad');
@@ -703,7 +768,7 @@
     // ボタン: 合格 = 次の注文へ(大きい)+ もう一回 / 不合格 = もう一回(大きい)
     var ok = k === 'clear', nb = $('b-next'), ab = $('b-again');
     nb.textContent = ok ? (S + 1 < STG.length ? T('次の注文へ', 'Next order') : T('大将の 一言', "The chef's word")) : T('もう一回', 'Again');
-    ab.hidden = !ok; ab.textContent = T('もう一回', 'Again'); $('b-board2').textContent = T('工具掛け', 'Tool wall'); $('b-share').textContent = T('シェア', 'Share');
+    ab.hidden = !ok; ab.textContent = T('もう一回', 'Again'); $('b-board2').textContent = T('餃子帳', 'Gyoza book'); $('b-shop2').textContent = T('チップを使う', 'Spend chips'); $('b-share').textContent = T('シェア', 'Share');
     nb.onclick = ok ? function () { openCard(S + 1); } : clockIn;
     resEl.classList.add('on');
     if (promoFrom >= 0) setTimeout(function () { if (st === 'RESULT') boardOpen(true, S); }, 900);       // 昇格の場面(工具が掛かる → 札が返る)
@@ -714,6 +779,48 @@
     if (navigator.share) { navigator.share({ text: shareText, url: url }).catch(function () {}); return; }
     window.open('https://twitter.com/intent/tweet?text=' + encodeURIComponent(shareText) + '&url=' + encodeURIComponent(url), '_blank', 'noopener');
   }
+
+  // ---- 店(11-27 14 回目): チップで 買う。どれも 3 段まで(色・モーター・店の見た目)+ 次の面を 先に開ける + 金ネジ 2 倍(次の 1 面)----
+  var shopEl = $('shop');
+  var SHOPI = [
+    { k: 'color', max: 3, price: [100, 250, 500], name: ['ドリルの 色', 'Drill colour'], tier: [['赤', 'Red'], ['黒', 'Black'], ['金', 'Gold']], desc: ['青緑 → 赤 → 黒 → 金', 'Teal → red → black → gold'] },
+    { k: 'motor', max: 3, price: [150, 350, 700], name: ['モーター', 'Motor'], tier: [['太い', 'Beefy'], ['うなる', 'Growling'], ['唸る王', 'Roaring']], desc: ['音が 太く 低く・ふるえが 強く', 'Deeper sound, stronger rumble'] },
+    { k: 'look', max: 2, price: [200, 500], name: ['店の 見た目', 'Shop look'], tier: [['のれん', 'Noren'], ['提灯', 'Lanterns']], desc: ['題名の 店に のれん → 提灯', 'Noren, then lanterns on the title'] },
+    { k: 'open', max: 1, price: [120], name: ['次の注文を 先に', 'Unlock next order'], tier: [['開ける', 'Unlock']], desc: ['合格の 前に 次の面を 試せる', 'Try the next order before passing'] },
+    { k: 'gold', max: 99, price: [60], name: ['金ネジ 2 倍', 'Gold screws ×2'], tier: [['次の 1 面', 'Next order']], desc: ['次に 遊ぶ ドリルの面で 金ネジが 2 倍', 'Double gold screws in your next drill order'] }
+  ];
+  function openTarget() { var nx = nextStage(); return nx < 0 || nx + 1 >= STG.length ? -1 : nx + 1; }   // 次の注文の さらに 次
+  function shopLevel(it) { if (it.k === 'open') { var tg = openTarget(); return tg < 0 || PROG.open[tg] || PROG.clear[tg] ? 1 : 0; } if (it.k === 'gold') return 0; return SHOP[it.k] || 0; }
+  function shopOpen(on) {
+    if (!on) { shopEl.classList.remove('on'); if (st === 'TITLE') { fillTitle(); drawBg(); } return; }
+    audioOn(); haptic('ui'); shopEl.classList.add('on'); shopText(); $('p-close').focus({ preventScroll: true });
+  }
+  function shopText() {
+    $('p-title').textContent = T('店', 'Shop'); $('p-chips').textContent = T('チップ ' + SHOP.chips + (SHOP.goldNext ? '(金ネジ 2 倍 × ' + SHOP.goldNext + ')' : ''), 'Chips ' + SHOP.chips + (SHOP.goldNext ? ' (gold ×2 × ' + SHOP.goldNext + ')' : '')); $('p-close').textContent = T('閉じる', 'Close');
+    var rows = $('p-rows'); rows.innerHTML = '';
+    SHOPI.forEach(function (it) {
+      var lv = shopLevel(it), done = lv >= it.max, price = done ? 0 : it.price[Math.min(lv, it.price.length - 1)], tier = it.tier[Math.min(lv, it.tier.length - 1)];
+      var row = document.createElement('div'); row.className = 'prow';
+      var l = document.createElement('div'); l.className = 'pl'; var n = document.createElement('div'); n.className = 'pn'; n.textContent = T(it.name[0], it.name[1]) + (it.max > 1 && it.max < 99 ? '  ' + lv + ' / ' + it.max : ''); var dsc = document.createElement('div'); dsc.className = 'pd'; dsc.textContent = T(it.desc[0], it.desc[1]); l.appendChild(n); l.appendChild(dsc);
+      var b = document.createElement('button'); b.type = 'button'; b.textContent = done ? T('済み', 'Owned') : T(tier[0] + ' ' + price, tier[1] + ' ' + price); b.disabled = done || SHOP.chips < price;
+      if (it.k === 'open' && openTarget() < 0) { b.disabled = true; b.textContent = T('全部 開いた', 'All open'); }
+      if (it.k === 'open' && openTarget() >= 0) dsc.textContent = T('「' + STG[openTarget()].dish[0] + '」を 先に 開ける', 'Unlock "' + STG[openTarget()].dish[1] + '" early');
+      b.addEventListener('click', function () { buy(it); });
+      row.appendChild(l); row.appendChild(b); rows.appendChild(row);
+    });
+  }
+  function buy(it) {
+    var lv = shopLevel(it), price = it.price[Math.min(lv, it.price.length - 1)]; if (lv >= it.max || SHOP.chips < price) return;
+    SHOP.chips -= price;
+    if (it.k === 'open') { var tg = openTarget(); if (tg >= 0) { PROG.open[tg] = true; saveProg(); } }
+    else if (it.k === 'gold') SHOP.goldNext++;
+    else SHOP[it.k] = lv + 1;
+    saveShop(); if (it.k === 'color') rebakeDrill(); play('promo'); haptic('promo'); shopText(); if (it.k === 'look') drawBg();
+  }
+  $('b-shop').addEventListener('click', function () { shopOpen(true); });
+  $('b-shop2').addEventListener('click', function () { shopOpen(true); });
+  $('p-close').addEventListener('click', function () { haptic('ui'); shopOpen(false); });
+  shopEl.addEventListener('pointerdown', function (e) { if (e.target === shopEl) shopOpen(false); });
 
   // ---- 設定の画面(品書きの札。題名と 結果から開く。遊んでいる間は 開けない)----
   var setEl = $('set'), setFrom = null;
@@ -791,7 +898,7 @@
     if (st === 'MINI_END' && tn - endT > 1600) showResult();
     sx(fx); fx.clearRect(0, 0, W, H);
     if (st === 'CARD' && cardEnd) { /* 予約票: 店の写真だけ */ }
-    else if (mini && st !== 'TITLE') SCN[mini.kind].frame(tn, dt);
+    else if (mini && st !== 'TITLE') { if (PREP && st === 'MINI' && STG[S].kind === 'prep' && PREP.nextT && tn >= PREP.nextT) { PREP.nextT = 0; prepNext(); } SCN[mini.kind].frame(tn, dt); }
     else if (st === 'BOIL' || (st === 'RESULT' && boil)) drawBoil(tn, dt); else drawBench(tn, dt);
     if (st === 'RESULT') { var g = fx.createLinearGradient(0, H * 0.35, 0, H); g.addColorStop(0, 'rgba(20,6,2,0)'); g.addColorStop(1, 'rgba(20,6,2,.55)'); fx.fillStyle = g; fx.fillRect(0, H * 0.35, W, H * 0.65); }
     bgmDuck(st === 'PLAY' && game && game.phase === 'drill' ? 0.4 : 1);
@@ -825,13 +932,13 @@
     // 餃子を持つ手
     var hx = 900, hy = H * 0.5;
     if (d) {
-      var torn = d.result === 'torn', hc = spr[torn ? 'hand_torn' : d.skin === 'thin' ? 'hand_thin' : 'hand'];
+      var torn = d.result === 'torn', hc = spr[torn ? 'hand_torn' : d.skin === 'thin' || d.skin === 'ebi' ? 'hand_thin' : 'hand'];
       c.drawImage(hc, ho.x - hc.pad, ho.y - hc.pad);
       var cur = Math.min(d.i, d.screws.length - 1);
       if (!torn) for (i = 0; i < d.screws.length; i++) {
         var scw = d.screws[i], q = screwPos(d, i), v = vis[d.id] && vis[d.id][i], on = drilling && i === d.i;
         c.save(); c.translate(ho.x + q.x, ho.y + q.y);
-        if (FRONT) drawHead(c, on ? -x * PXU : hgtOf(scw), on ? drill.rot : (v ? v.rot : i * 1.3), on ? drill.rpm : 0, scw.grade === 'loose' && v ? v.tilt * 1.6 : 0);
+        if (FRONT) drawHead(c, on ? -x * PXU : hgtOf(scw), on ? drill.rot : (v ? v.rot : i * 1.3), on ? drill.rpm : 0, scw.grade === 'loose' && v ? v.tilt * 1.6 : 0, scw.kind);
         else { c.rotate(TH + (scw.grade === 'loose' && v ? v.tilt : 0)); drawScrew(c, on ? -x * PXU : hgtOf(scw), on ? drill.rot : (v ? v.rot : i * 1.3), on ? drill.rpm : 0); }
         c.restore();
       }
@@ -970,19 +1077,45 @@
   }
   // 上の帯: 残り時間 / 左 = いくつ できたか(合格の数まで)/ 右 = ドリルの速さの札・破いた数
   function pill(c, x, y, w, h) { c.fillStyle = 'rgba(28,12,6,.74)'; rr(c, x, y, w, h, h / 2); c.fill(); }
+  // 熱と チップ(左の 2 段目)+ 火花。熱が 上がると 札が 光り、冷めると 灰色で「冷めた」
+  function drawHeat(c, tn, y) {
+    var h = run.heat, chips = Math.floor(run.chips), y2 = y + 112, lbl = [T('チップ', 'Chips'), T('熱 ×1.5', 'Heat ×1.5'), T('熱々 ×2', 'Red hot ×2'), T('神ドリル ×3', 'Divine ×3')];
+    c.font = '900 34px ' + FONT_UI; c.textBaseline = 'middle'; c.textAlign = 'left';
+    var txt = (h ? lbl[h] + '  ' : '') + T('チップ ', 'Chips ') + chips, tw = c.measureText(txt).width, pulse = clamp(1 - (tn - heatT) / 500, 0, 1);
+    c.save(); if (h) { c.shadowColor = h >= 3 ? 'rgba(255,200,60,.95)' : 'rgba(255,150,40,.8)'; c.shadowBlur = 14 + 18 * pulse + 6 * h; }
+    var gr = c.createLinearGradient(0, y2, 0, y2 + 54); if (h) { gr.addColorStop(0, h >= 3 ? '#fff1a8' : '#ffd25a'); gr.addColorStop(1, h >= 2 ? '#e2561a' : '#c8861a'); } else { gr.addColorStop(0, 'rgba(28,12,6,.74)'); gr.addColorStop(1, 'rgba(28,12,6,.74)'); }
+    c.fillStyle = gr; rr(c, 54, y2, tw + 44, 54, 27); c.fill(); c.restore();
+    c.fillStyle = h ? '#2a0a04' : '#ffe9a8'; c.fillText(txt, 76, y2 + 28);
+    var ca = (tn - coolT) / 1000; if (ca >= 0 && ca < 1) { c.globalAlpha = 1 - ca; c.font = '900 32px ' + FONT_UI; c.fillStyle = '#cfd6de'; c.fillText(T('熱が 冷めた', 'Cooled down'), 76, y2 + 84); c.globalAlpha = 1; }
+    if (h && (st === 'PLAY' || st === 'MINI') && !RM && sparks.length < 18 + 8 * h && Math.random() < 0.25 * h) sparks.push({ x: 60 + Math.random() * 960, y: H + 10, vy: -(260 + Math.random() * 300), vx: (Math.random() - 0.5) * 60, t0: tn, life: 1400 + Math.random() * 800, r: 6 + Math.random() * 8 });
+    c.save(); c.globalCompositeOperation = 'lighter';
+    for (var i = sparks.length - 1; i >= 0; i--) { var p = sparks[i], a = (tn - p.t0) / p.life; if (a >= 1) { sparks.splice(i, 1); continue; } var px = p.x + p.vx * a * p.life / 1000, py = p.y + p.vy * a * p.life / 1000, sz = p.r * (1 - a);
+      c.fillStyle = 'rgba(255,' + (200 + 40 * (1 - a) | 0) + ',110,' + (0.8 * (1 - a)) + ')'; c.beginPath(); c.moveTo(px, py - sz); c.lineTo(px + sz * 0.25, py - sz * 0.25); c.lineTo(px + sz, py); c.lineTo(px + sz * 0.25, py + sz * 0.25); c.lineTo(px, py + sz); c.lineTo(px - sz * 0.25, py + sz * 0.25); c.lineTo(px - sz, py); c.lineTo(px - sz * 0.25, py - sz * 0.25); c.fill(); }
+    c.restore();
+  }
   function drawHud(c, tn) {
     var D = STG[S], t = tn - T0 - (fake != null ? 0 : 24), y = Math.round(H * 0.045) + 16, i, left, tot, got, lab;
-    if (D.kind === 'drill') { left = game.left(t); tot = game.TIME; got = game.closed; lab = T('餃子', 'Dumplings'); }
-    else { left = mini.g.left(t); tot = mini.g.cfg.time; got = ({ staple: mini.g.closed, cut: mini.g.cuts, crank: mini.g.done, smash: mini.g.done, saw: mini.g.done })[D.kind]; if (got == null) got = mini.g.good; lab = T(({ staple: '春巻', cut: '細切り', caulk: '焼売', kanna: '白髪ねぎ', crank: 'ひと口', smash: 'きゅうり', saw: 'スペアリブ' })[D.kind], ({ staple: 'Spring rolls', cut: 'Strips', caulk: 'Shumai', kanna: 'Leek shreds', crank: 'Bites', smash: 'Cucumbers', saw: 'Ribs' })[D.kind]); }   // 11-27 13 回目(ユウキさん「閉めたっていう表現微妙」)= 数えている 料理の 名前
+    var Q2 = stageQuota(D);
+    if (D.kind === 'drill') { left = game.left(t); tot = game.TIME; got = game.closed; lab = T(D.count[0], D.count[1]); }
+    else if (D.kind === 'prep' && PREP) { var stp = D.steps[PREP.i]; left = mini.g.left(t); tot = mini.g.cfg.time; got = prepCount(); lab = T((PREP.i + 1) + '/3 ' + stp.count[0], (PREP.i + 1) + '/3 ' + stp.count[1]); Q2 = stp.quota; }
+    else { left = mini.g.left(t); tot = mini.g.cfg.time; got = mini.g.closed; lab = T(D.count[0], D.count[1]); }
     var k = left / tot;
     c.fillStyle = 'rgba(28,12,6,.74)'; rr(c, 54, y - 6, 972, 30, 15); c.fill();
     if (k > 0.004) { c.fillStyle = k < 0.2 ? RED : PAPER; rr(c, 60, y, Math.max(18, 960 * k), 18, 9); c.fill(); }
     // できた数(合格の数に届くと 赤い地に)
-    var ok = got >= D.quota, txt = lab + ' ' + got + ' / ' + D.quota;
+    var ok = got >= Q2, txt = lab + ' ' + got + ' / ' + Q2;
     c.font = '900 40px ' + FONT_UI; var tw = c.measureText(txt).width;
     c.fillStyle = ok ? RED : 'rgba(28,12,6,.74)'; rr(c, 54, y + 36, tw + 48, 60, 30); c.fill();
     c.fillStyle = '#fff'; c.textAlign = 'left'; c.textBaseline = 'middle'; c.fillText(txt, 78, y + 68);
+    drawHeat(c, tn, y);
     if (D.kind !== 'drill') return;
+    if (D.cfg.limit && game.cur && game.cur.limitT != null && !game.cur.result && st === 'PLAY') {     // 焼き時計 / 回転台: 1 コごとの 残り
+      var lp = clamp((game.cur.limitT - t) / game.cfg.limit, 0, 1), by2 = y + 200, bw2 = 520, bx2 = 540 - bw2 / 2;
+      c.fillStyle = 'rgba(28,12,6,.74)'; rr(c, bx2 - 8, by2 - 8, bw2 + 16, 40, 20); c.fill();
+      var bc = D.id === 'yaki' ? (lp > 0.5 ? '#f2c14e' : lp > 0.2 ? '#d9822b' : '#7a3b12') : (lp > 0.3 ? '#f6e7c8' : RED); c.fillStyle = bc; rr(c, bx2, by2, Math.max(16, bw2 * lp), 24, 12); c.fill();
+      c.font = '900 30px ' + FONT_UI; c.textAlign = 'center'; c.fillStyle = '#fff'; c.fillText(D.id === 'yaki' ? T('焼き色', 'Browning') : T('回転台', 'Turntable'), 540, by2 + 62);
+    }
+    if (D.id === 'yaki') { SZS = contNoise(SZS, 'highpass', 2600, 0.7); if (SZS) SZS.g.gain.setTargetAtTime(st === 'PLAY' ? 0.035 : 0, AC.currentTime, 0.1); }   // じゅう(焼ける音)
     // ドリルの速さの札: 低速 / 高速 ×1.5(30 秒で 店が開くと 変わる。回している途中なら「次から高速」)
     var hiNow = game.gear() > 1, curHi = game.phase === 'drill' ? game.g0 > 1 : hiNow, pend = hiNow && !curHi;
     // 11-27 12 回目(ユウキさん「高速っていう文字が合ってない」): 日本語は 「低」「高」「速」を 看板の 筆の字(白)で、「×1.5」「次から」は 画面の ゴシック
@@ -1047,7 +1180,7 @@
       var yy = Math.round(H * 0.2), num = String(b.shut + (t > 600 ? b.extraShut : 0));
       c.save(); c.shadowColor = 'rgba(20,4,0,.45)'; c.shadowBlur = 24; c.shadowOffsetY = 10; c.fillStyle = PAPER; rr(c, 310, yy - 250, 460, 350, 6); c.fill(); c.restore();
       c.fillStyle = RED; c.fillRect(310, yy - 250, 460, 14);
-      c.textAlign = 'center'; c.textBaseline = 'alphabetic'; c.font = '700 46px ' + FONT_UI; c.fillStyle = INK; c.fillText(T('茹で上がり', 'Cooked'), 540, yy - 172);
+      c.textAlign = 'center'; c.textBaseline = 'alphabetic'; c.font = '700 46px ' + FONT_UI; c.fillStyle = INK; c.fillText(({ ebi: T('蒸し上がり', 'Steamed'), yaki: T('焼き上がり', 'Fried') })[STG[S].id] || T('茹で上がり', 'Cooked'), 540, yy - 172);
       c.font = '900 168px ' + FONT_UI; var nw = c.measureText(num).width; c.fillStyle = RED; c.fillText(num, 540 - (JA ? 22 : 0), yy + 2);
       if (JA) { c.font = '700 54px ' + FONT_UI; c.fillStyle = INK; c.textAlign = 'left'; c.fillText('コ', 540 - 22 + nw / 2 + 6, yy + 2); c.textAlign = 'center'; }
       c.font = '700 38px ' + FONT_UI; c.fillStyle = 'rgba(35,26,20,.7)'; c.fillText(T('開いた ' + b.opened + ' コ', 'Burst ' + b.opened), 540, yy + 70);
@@ -1068,6 +1201,12 @@
     if (n === 'hand_stapler') { if (!SIL.stapler_top) { var cv3 = mk(760, 1186); cv3.getContext('2d').drawImage(img.hand_stapler, 0, 0); SIL.stapler_top = cv3; } return SIL.stapler_top; }   // 工具掛けには 前と同じ 枠(腕の 描き足しは 切る)
     if (n === 'hand_kanna') { if (!SIL.kanna_top) { var cv2 = mk(1000, 520); cv2.getContext('2d').drawImage(img.hand_kanna, -100, 0); SIL.kanna_top = cv2; } return SIL.kanna_top; }   // 工具掛けには 手首まで(腕の長い写真は 切る)
     return img[n]; }
+  function drawBookPhoto(c, n, cx, cy, bw, bh, mode) {
+    var im = n === 'hand_stapler' ? toolImg('staple') : img[n]; if (!im) return; var sc = Math.min(bw / im.width, bh / im.height), w = im.width * sc, h = im.height * sc;
+    c.save(); if (mode) { c.globalAlpha = mode === 1 ? 0.55 : 0.28; if (!SIL['b_' + n]) { var cv = mk(im.width, im.height), cc = cv.getContext('2d'); cc.drawImage(im, 0, 0); cc.globalCompositeOperation = 'source-in'; cc.fillStyle = '#2a1a0e'; cc.fillRect(0, 0, cv.width, cv.height); SIL['b_' + n] = cv; } c.drawImage(SIL['b_' + n], cx - w / 2, cy - h / 2, w, h); }
+    else { c.shadowColor = 'rgba(30,14,4,.5)'; c.shadowBlur = 14; c.shadowOffsetX = 5; c.shadowOffsetY = 9; c.drawImage(im, cx - w / 2, cy - h / 2, w, h); }
+    c.restore();
+  }
   function silhouette(k) { if (SIL['s_' + k]) return SIL['s_' + k]; var im = toolImg(k), cv = mk(im.width, im.height), cc = cv.getContext('2d'); cc.drawImage(im, 0, 0); cc.globalCompositeOperation = 'source-in'; cc.fillStyle = '#2a1a0e'; cc.fillRect(0, 0, cv.width, cv.height); return (SIL['s_' + k] = cv); }
   function drawToolPhoto(c, k, cx, cy, bw, bh, mode) {
     var im = toolImg(k), sc = Math.min(bw / im.width, bh / im.height), w = im.width * sc, h = im.height * sc;
@@ -1093,10 +1232,10 @@
   }
   function boardText() {
     var n = promo && !promo.flipped ? promo.from : lvNow();
-    $('b-title').querySelector('b').textContent = T('工具掛け', 'Tool wall'); $('b-title').querySelector('span').textContent = 'Lv.' + (n + 1) + ' ' + T(LV[n][0], LV[n][1]);
+    $('b-title').querySelector('b').textContent = T('餃子帳', 'Gyoza book'); $('b-title').querySelector('span').textContent = 'Lv.' + (n + 1) + ' ' + T(LV[n][0], LV[n][1]);
     var ld = $('ladder'); ld.innerHTML = ''; LV.forEach(function (l, i) { var sp = document.createElement('span'); sp.textContent = T(l[0], l[1]); if (i <= n) sp.className = 'got'; if (i === n) sp.className = 'got now'; ld.appendChild(sp); });
     var i = boardSel, note = $('b-note'), bp = $('b-play');
-    if (promo) { note.textContent = T(STG[promo.s].tool[0] + 'を 工具掛けに掛けた', 'Hung the ' + STG[promo.s].tool[1].toLowerCase() + ' on the wall'); bp.hidden = true; return; }
+    if (promo) { note.textContent = T(STG[promo.s].dish[0] + 'を 餃子帳に 書いた', 'Added ' + STG[promo.s].dish[1] + ' to the gyoza book'); bp.hidden = true; return; }
     bp.hidden = false;
     if (i < STG.length) {
       var D = STG[i]; note.textContent = T(D.tool[0] + '　' + D.dish[0] + (PROG.best[i] ? '  最高 ' + PROG.best[i] + ' ' + D.unit[0] : ''), D.tool[1] + ' — ' + D.dish[1] + (PROG.best[i] ? '  Best ' + PROG.best[i] : ''));
@@ -1113,28 +1252,27 @@
     // 有孔ボード(茶色の板に 穴の列)
     c.drawImage(img.pegboard, 0, 0, BW, BH);                      // 有孔ボード(写真)
     if (promo && !promo.flipped && tn - promo.t0 > 950) { promo.flipped = true; play('promo'); haptic('promo'); boardText(); var sp = $('b-title').querySelector('span'); sp.classList.remove('flip'); void sp.offsetWidth; sp.classList.add('flip'); }
-    for (var i = 0; i < STG.length; i++) {            // 8 枠(4 × 2)。工具は 写真(持っていない = 黒い影)
-      var col = i % 4, row = Math.floor(i / 4), cx = 112 + col * 225, cy = 150 + row * 440, isNow = true, tk = TOOLK[i], has = PROG.clear[i];
-      if (i === boardSel && !promo) { c.strokeStyle = '#fff'; c.lineWidth = 6; rr(c, cx - 106, cy - 128, 212, 400, 10); c.stroke(); }
+    for (var i = 0; i < STG.length; i++) {            // 餃子帳 = 9 枠(3 × 3)。餃子の 写真(まだ = 黒い影)。金の札 = その面で 優 9 割以上
+      var col = i % 3, row = Math.floor(i / 3), cx = 150 + col * 300, cy = 118 + row * 296, has = PROG.clear[i];
+      if (i === boardSel && !promo) { c.strokeStyle = '#fff'; c.lineWidth = 6; rr(c, cx - 140, cy - 108, 280, 286, 10); c.stroke(); }
       var drop = 0;
-      if (promo && promo.s === i) { var a = (tn - promo.t0) / 700; drop = a < 1 ? -260 * Math.pow(1 - a, 2) * Math.cos(a * 9) : 0; }
-      drawToolPhoto(c, tk, cx, cy + 40 + drop, 190, 230, has || (promo && promo.s === i) ? 0 : unlocked(i) ? 1 : 2);
-      // 紙の札(料理と 最高)
-      c.save(); c.translate(cx, cy + 210); c.rotate((i % 2 ? 1 : -1) * 0.025);
-      c.shadowColor = 'rgba(30,14,4,.4)'; c.shadowBlur = 10; c.shadowOffsetY = 5; c.fillStyle = PAPER; c.fillRect(-100, -50, 200, 112); c.shadowColor = 'transparent';
-      c.fillStyle = RED; c.fillRect(-100, -50, 200, 8);
+      if (promo && promo.s === i) { var a = (tn - promo.t0) / 700; drop = a < 1 ? -200 * Math.pow(1 - a, 2) * Math.cos(a * 9) : 0; }
+      drawBookPhoto(c, BOOK[i], cx, cy + 20 + drop, 230, 150, has || (promo && promo.s === i) ? 0 : unlocked(i) ? 1 : 2);
+      c.save(); c.translate(cx, cy + 136); c.rotate((i % 2 ? 1 : -1) * 0.02);
+      c.shadowColor = 'rgba(30,14,4,.4)'; c.shadowBlur = 10; c.shadowOffsetY = 5; c.fillStyle = GOLDC[i] ? '#f6d77a' : PAPER; c.fillRect(-130, -36, 260, 80); c.shadowColor = 'transparent';
+      c.fillStyle = RED; c.fillRect(-130, -36, 260, 7);
       c.textAlign = 'center'; c.textBaseline = 'alphabetic'; c.fillStyle = INK;
-      var nm = isNow ? T(STG[i].dish[0], STG[i].dish[1]) : T(FUTURE[i - STG.length].dish[0], FUTURE[i - STG.length].dish[1]);
-      c.font = '900 ' + (nm.length > 6 && JA ? 22 : JA ? 26 : 19) + 'px ' + FONT_UI; c.fillText(nm, 0, -6, 188);
-      c.font = '700 26px ' + FONT_UI; c.fillStyle = has ? RED : 'rgba(35,26,20,.5)';
-      c.fillText(has ? T('最高 ' + PROG.best[i] + ' ' + STG[i].unit[0], 'Best ' + PROG.best[i]) : unlocked(i) ? T('まだ', 'Not yet') : T('前の注文のあと', 'Locked'), 0, 38, 188);
+      var nm = T(STG[i].dish[0], STG[i].dish[1]);
+      c.font = '900 ' + (JA ? (nm.length > 7 ? 21 : 25) : 18) + 'px ' + FONT_UI; c.fillText(nm, 0, -2, 248);
+      c.font = '700 22px ' + FONT_UI; c.fillStyle = has ? RED : 'rgba(35,26,20,.5)';
+      c.fillText(has ? T('最高 ' + PROG.best[i] + ' ' + STG[i].unit[0], 'Best ' + PROG.best[i]) : unlocked(i) ? T('まだ', 'Not yet') : T('前の注文のあと', 'Locked'), 0, 30, 248);
       c.restore();
     }
     boardRAF = requestAnimationFrame(boardLoop);
   }
   pegc.addEventListener('pointerdown', function (e) {
     if (promo) { promo.t0 = -1e9; return; }                  // 昇格の場面は 押すと 先送り
-    var r = pegc.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * 900, y = (e.clientY - r.top) / r.height * 900, i = Math.min(3, Math.floor(x / 225)) + (y > 450 ? 4 : 0);
+    var r = pegc.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * 900, y = (e.clientY - r.top) / r.height * 900, i = Math.min(2, Math.floor(x / 300)) + 3 * Math.min(2, Math.floor(y / 300));
     boardSel = i; haptic('ui'); boardText();
   });
   $('b-close').addEventListener('click', function () { haptic('ui'); if (promo) { promo.t0 = -1e9; if (!promo.flipped) return; } boardOpen(false); if (st === 'TITLE') fillTitle(); });
@@ -1142,18 +1280,20 @@
   boardEl.addEventListener('pointerdown', function (e) { if (e.target === boardEl) { if (promo) promo.t0 = -1e9; else boardOpen(false); } });
 
   // ================= 2 面: ホッチキスで 春巻を 3 か所 留める(奥の厨房)=================
-  var GT = window.GZTools, RV = 0.32;                  // 春巻が流れる速さ(px/ms)
+  var GT = window.GZTools, RV = 0.32;
+  // 餃子工場(三皿目): ベルトが だんだん 速く(1 コの 間隔が 縮む)。印 3 つは とじ目の 上に 近く 並ぶ
+  var FACTORY = { time: 36000, quota: 6, top: 12, win: 150, good: 60, phases: [{ from: 0, period: 2700, marks: [1300, 1580, 1860], thick: 0 }, { from: 12000, period: 2250, marks: [1200, 1450, 1700], thick: 0 }, { from: 24000, period: 1850, marks: [1100, 1320, 1540], thick: 0 }] };                  // 春巻が流れる速さ(px/ms)
   function kitchenPlate() { var s = bgS(); return { x: bgX() + 600 * s, y: 1310 * s, rx: 300 * s, ry: 226 * s }; }   // 厨房の写真の 大皿(目で測った値)
-  function stapleStart(sd) { return { kind: 'staple', g: new GT.Staple(sd), arm: new Spring(900, 30, 0), staples: {}, fly: [], plate: [], off: [], endAt: 0 }; }
+  function stapleStart(sd, D) { return { kind: 'staple', g: new GT.Staple(sd, D && D.id === 'factory' ? FACTORY : undefined), arm: new Spring(900, 30, 0), staples: {}, fly: [], plate: [], off: [], endAt: 0 }; }
   function stapleY() { return Math.round(H * 0.83); }
   var MX = 330;                                        // ホッチキスの口の x
   function markX(m, t) { return MX + (t - m.at) * RV; }
   function rollSpan(r, t) { var xs = r.marks.map(function (m) { return markX(m, t); }); return { a: Math.min.apply(null, xs) - 118, b: Math.max.apply(null, xs) + 118 }; }
   function porkPat(c) { return c.createPattern(img.pork, 'repeat'); }   // 餡 = 挽き肉の 写真を 敷きつめる
   function drawRoll(c, r, a, b, y, R, t, st0) {        // 春巻 1 本(写真 roll。横に のばして 長さを合わせる)。a・b = 左右の端、y = 中心
-    var len = b - a, h = R * 2.2;
-    c.save(); c.shadowColor = 'rgba(30,20,10,.4)'; c.shadowBlur = 18; c.shadowOffsetY = 10; c.drawImage(img.roll, a - 6, y - h / 2, len + 12, h); c.restore();
-    var sy = y - R * 0.5;                              // 針を 打つ 高さ(とじ目の すぐ下)
+    var len = b - a, h = R * 2.2, fac = STG[S] && STG[S].id === 'factory', sy = y - R * 0.5;   // 針を 打つ 高さ(とじ目の すぐ下)
+    if (fac) { var dim = img.dumpling, dw = len + 30, dh = dw * dim.height / dim.width; c.save(); c.shadowColor = 'rgba(30,20,10,.4)'; c.shadowBlur = 18; c.shadowOffsetY = 10; c.drawImage(dim, a - 15, y - dh * 0.55, dw, dh); c.restore(); sy = y - dh * 0.55 + dh * 0.18; }   // 餃子工場: 流れてくる 餃子(とじ目 = 上の縁)
+    else { c.save(); c.shadowColor = 'rgba(30,20,10,.4)'; c.shadowBlur = 18; c.shadowOffsetY = 10; c.drawImage(img.roll, a - 6, y - h / 2, len + 12, h); c.restore(); }
     for (var k = 0; k < r.marks.length; k++) {
       var m = r.marks[k], mx = a + (len / 2) + (st0 ? st0[k] : markX(m, t) - (a + b) / 2);
       if (m.hit === 'hit' || m.hit === 'perfect') { c.save(); c.shadowColor = 'rgba(40,24,8,.45)'; c.shadowBlur = 4; c.shadowOffsetY = 3; c.drawImage(img.staple, mx - 30, sy - 7, 60, 14); c.restore(); }   // 針(写真)
@@ -1199,7 +1339,18 @@
     drawStapler(c, y, 78, clamp(down, 0, 1.3));
     drawPops(c, tn); if (st === 'MINI' || st === 'MINI_END') drawHud(c, tn);
   }
-  function handleMini(evs) { for (var i = 0; i < evs.length; i++) SCN[mini.kind].ev(evs[i]); }
+  function handleMini(evs) {
+    for (var i = 0; i < evs.length; i++) {
+      var e = evs[i];
+      if (PREP && STG[S].kind === 'prep' && mini) {
+        if (e.type === 'end' && e.kind !== 'idle') { PREP.nextT = now() + 600; continue; }            // 工程の 時間切れ → 次の工程へ
+        SCN[mini.kind].ev(e);
+        if (!PREP.nextT && prepCount() >= PREP.D.steps[PREP.i].quota) PREP.nextT = now() + 900;      // 数が そろったら 早めに 次へ
+        continue;
+      }
+      SCN[mini.kind].ev(e);
+    }
+  }
   function stapleEv(e) {
     var M = mini, y = stapleY();
     if (e.type === 'spawn') play('roll');
@@ -1212,7 +1363,7 @@
       var r = e.roll, s = rollSpan(r, e.t), n = M.plate.length + M.fly.length, P = kitchenPlate(), col = n % 3, row = Math.floor(n / 3) % 3, R = r.thick ? 92 : 78;
       var st0 = r.marks.map(function (m) { return markX(m, e.t) - (s.a + s.b) / 2; });
       M.fly.push({ r: r, t0: now(), x0: (s.a + s.b) / 2, y0: y, x1: P.x + P.rx * (0.05 + col * 0.24) + row * 14, y1: P.y - P.ry * (0.62 - row * 0.2), rot: -0.5 + col * 0.06, len: s.b - s.a, R: R, st: st0 }); play('slide');
-    } else if (e.type === 'stage') { play('boss'); say(T('常連「端まで 具を 入れて！ 太巻きで」', 'Regular: "Fill them to the ends! Fat ones!"'), 2400); bgmLayer(1); }
+    } else if (e.type === 'stage') { play('boss'); if (STG[S].id === 'factory') say(e.stage >= 2 ? T('大将「最高速や！」', 'Chef: "Top speed!"') : T('大将「ベルトを 速くするで」', 'Chef: "Speeding up the belt!"'), 2000); else say(T('常連「端まで 具を 入れて！ 太巻きで」', 'Regular: "Fill them to the ends! Fat ones!"'), 2400); bgmLayer(e.stage); }
     else if (e.type === 'timeup') play('whistle');
     else if (e.type === 'end') finishMini(e.kind);
   }
@@ -1319,10 +1470,11 @@
   // せいろの 皮 9 つの 真ん中(写真の座標。目で測った値)。餡を絞り終えた 焼売は ここへ 入る
   var CUPS = [[465, 1200], [578, 1160], [705, 1170], [800, 1225], [442, 1310], [622, 1280], [790, 1340], [520, 1390], [672, 1400]];
   function caulkC() { return { x: 540, y: Math.round(H * 0.79) }; }
-  function caulkStart(sd) { return { kind: 'caulk', g: new GT.Caulk(sd), fly: [], filled: [], last: null, sq: 0, hapT: 0, gone: null }; }
+  function stepCfg(base, D) { var st2 = PREP && D && D.kind === 'prep' ? D.steps[PREP.i] : null; if (!st2) return base; var c = JSON.parse(JSON.stringify(base)); c.time = st2.time; c.quota = st2.quota; if (st2.k === 'caulk') { c.petal = 0; c.R = 150; } return c; }
+  function caulkStart(sd, D) { return { kind: 'caulk', g: new GT.Caulk(sd, stepCfg(GT.CAULK, D)), fly: [], filled: [], last: null, sq: 0, hapT: 0, gone: null }; }
   function wrapperPath(c, R, k) { var p = new Path2D(), n = 22; for (var i = 0; i <= 96; i++) { var a = i / 96 * Math.PI * 2, rr = R * (1 + 0.045 * Math.cos(n * a)); if (i) p.lineTo(c.x + rr * Math.cos(a), c.y + rr * Math.sin(a) * k); else p.moveTo(c.x + rr * Math.cos(a), c.y + rr * Math.sin(a) * k); } p.closePath(); return p; }
   function drawWrapper(c, x, y, R, sc) {             // 焼売の皮(写真 wrapper。真上から・波の縁)
-    var r = R * sc; c.save(); c.shadowColor = 'rgba(30,20,8,.35)'; c.shadowBlur = 24; c.shadowOffsetY = 12; c.drawImage(img.wrapper, x - r, y - r, r * 2, r * 2); c.restore();
+    var r = R * sc; c.save(); c.shadowColor = 'rgba(30,20,8,.35)'; c.shadowBlur = 24; c.shadowOffsetY = 12; c.drawImage(PREP ? img.gwrap : img.wrapper, x - r, y - r, r * 2, r * 2); c.restore();
   }
   function drawBead(c, pts, w) {                      // 餡の すじ(挽き肉の 写真を 太い線に 敷く)
     if (pts.length < 2) return;
@@ -1339,7 +1491,8 @@
     var M = mini, g = M.g, t = tn - T0 - (fake != null ? 0 : 24), c = fx, C = caulkC(), s = bgS(), i;
     if (st === 'MINI') handleMini(g.advance(t));
     // せいろに 入った 焼売(ピンクの餡が 花の形に のる)
-    for (i = 0; i < M.filled.length; i++) { var f = M.filled[i], q = CUPS[i % CUPS.length], px = bgX() + q[0] * s + (i >= CUPS.length ? 8 : 0), py = q[1] * s - (i >= CUPS.length ? 10 : 0);
+    if (PREP) { var KP2 = kitchenPlate(); for (i = 0; i < M.filled.length; i++) { var ang2 = i * 2.1, dw = 210, dh = dw * img.dumpling.height / img.dumpling.width; c.save(); c.shadowColor = 'rgba(30,20,8,.4)'; c.shadowBlur = 8; c.shadowOffsetY = 4; c.drawImage(img.dumpling, KP2.x + Math.cos(ang2) * KP2.rx * 0.45 - dw / 2, KP2.y + Math.sin(ang2) * KP2.ry * 0.4 - dh / 2, dw, dh); c.restore(); } }   // 仕込み: 包んだ 餃子が 皿に 並ぶ
+    else for (i = 0; i < M.filled.length; i++) { var f = M.filled[i], q = CUPS[i % CUPS.length], px = bgX() + q[0] * s + (i >= CUPS.length ? 8 : 0), py = q[1] * s - (i >= CUPS.length ? 10 : 0);
       var sw2 = 104 * f.size; c.save(); c.shadowColor = 'rgba(30,20,8,.4)'; c.shadowBlur = 8; c.shadowOffsetY = 4; c.drawImage(img.shumai_top, px - sw2 / 2, py - sw2 * 0.45, sw2, sw2 * 0.9); c.restore(); }   // 仕上がった 花焼売(写真)
     // 手前の 大きい皮 + 花の点線
     var k = g.size(), R = g.cfg.R * k, rd = g.ready(t) || st !== 'MINI';
@@ -1359,7 +1512,7 @@
     squeezeSound(g.stroke ? Math.min(1, (M.v || 0) / 900) : 0);
     drawPops(c, tn); if (st === 'MINI' || st === 'MINI_END') drawHud(c, tn);
   }
-  function flowerPts(C, R) { var a = []; for (var i = 0; i <= 72; i++) { var t = i / 72 * Math.PI * 2, r = GT.flowerR(R, t); a.push({ x: C.x + r * Math.cos(t), y: C.y + r * Math.sin(t) }); } return a; }
+  function flowerPts(C, R) { var a = []; for (var i = 0; i <= 72; i++) { var t = i / 72 * Math.PI * 2, r = GT.flowerR(R, t, mini && mini.g && mini.g.cfg.petal); a.push({ x: C.x + r * Math.cos(t), y: C.y + r * Math.sin(t) }); } return a; }
   function flowerPath(C, R) { var p = new Path2D(), a = flowerPts(C, R); p.moveTo(a[0].x, a[0].y); for (var i = 1; i < a.length; i++) p.lineTo(a[i].x, a[i].y); p.closePath(); return p; }
   function caulkEv(e) {
     var M = mini, C = caulkC();
@@ -1381,9 +1534,9 @@
   // ================= 五品目: かんなで 白髪ねぎ(厨房)=================
   // 両手で 持つ(指 2 本 = 左右の取っ手)。PC の マウスは 1 本で 両手の扱い。かんなは 手前(画面の下)へ 引く
   function kannaTop() { return { x: 540, y: Math.round(H * 0.5) }; }
-  function kannaStart(sd) { var g = new GT.Kanna(sd), p = kannaTop(); g.setTop(p.x, p.y); return { kind: 'kanna', g: g, curls: [], pile: [], jamT: -1e9, hapT: 0, lastY: 0, v: 0, chunk: [] }; }
+  function kannaStart(sd, D) { var g = new GT.Kanna(sd, stepCfg(GT.KANNA, D)), p = kannaTop(); g.setTop(p.x, p.y); return { kind: 'kanna', g: g, curls: [], pile: [], jamT: -1e9, hapT: 0, lastY: 0, v: 0, chunk: [] }; }
   // まな板 + 長ねぎ(写真 board。ねぎの 根元 = 絵の (390, 1395)、葉の先 = y 60)。根元を ねぎの 下の端(y0 + len + 80)に 合わせる。太い ねぎ = 少し 大きく
-  function drawBoardNegi(c, x, y0, len, thick) { var im = img.board, s = thick ? 0.86 : 0.75, w = im.width * s, h = im.height * s, bx = x - 390 * s, by = y0 + len + 80 - 1395 * s;
+  function drawBoardNegi(c, x, y0, len, thick) { var cab = !!PREP, im = cab ? img.board_cab : img.board, s = thick ? 0.86 : 0.75, w = im.width * s, h = im.height * s, bx = x - (cab ? 410 : 390) * s, by = y0 + len + 80 - (cab ? 1350 : 1395) * s;   // 仕込み = キャベツ(根元 = 絵の (410, 1350))
     c.save(); c.shadowColor = 'rgba(20,10,4,.45)'; c.shadowBlur = 26; c.shadowOffsetY = 14; c.drawImage(im, bx, by, w, h); c.restore(); }
   var KX0 = 150.1;                                    // 11-27 9 回目: 腕を 左右と下へ 描き足した ぶん 絵が 左へ 広がった(取っ手の 位置は 前の絵 + KX0)
   // かんなを 両手で持つ 写真(hand_kanna。左右の手の 指先 = 絵の (252, 85) と (675, 85)。その まん中 (463, 85) を かんなの位置に)
@@ -1400,7 +1553,7 @@
     // 皿の上の 白髪ねぎ(ふわっと 山になる)
     var KP = { x: 800, y: P.y + len * 0.45, rx: 120, ry: len * 0.42 };   // 削った ねぎは まな板の 右に 積む(厨房の大皿は まな板の下になる)
     drawBoardNegi(c, P.x, P.y, len, thick);
-    if (M.pile.length) { var pw = Math.min(300, 110 + M.pile.length * 16), ph = pw * img.negipile.height / img.negipile.width; c.save(); c.shadowColor = 'rgba(20,10,4,.3)'; c.shadowBlur = 10; c.shadowOffsetY = 6; c.drawImage(img.negipile, KP.x - pw / 2, KP.y + KP.ry * 0.3 - ph, pw, ph); c.restore(); }   // 削った 白髪ねぎの 山(写真。数で 大きくなる)
+    if (M.pile.length) { var pw = Math.min(300, 110 + M.pile.length * 16), ph = pw * (PREP ? img.cabshreds : img.negipile).height / (PREP ? img.cabshreds : img.negipile).width; c.save(); c.shadowColor = 'rgba(20,10,4,.3)'; c.shadowBlur = 10; c.shadowOffsetY = 6; c.drawImage(PREP ? img.cabshreds : img.negipile, KP.x - pw / 2, KP.y + KP.ry * 0.3 - ph, pw, ph); c.restore(); }   // 削った 白髪ねぎの 山(写真。数で 大きくなる)
     var sk = g.stroke, h = g.hands(), y = sk ? sk.y : P.y - 40, tilt = sk && sk.dL != null ? Math.atan2(sk.dR - sk.dL, GT.KANNA.gripDX * 2) : (h.L && !h.R ? 0.08 : !h.L && h.R ? -0.08 : 0);
     if (tn - M.jamT < 380) tilt += Math.sin((tn - M.jamT) / 30) * 0.06;
     var rd = g.ready(t) || st !== 'MINI', one = (h.L && !h.R) || (!h.L && h.R);
@@ -1408,7 +1561,7 @@
     drawKannaPhoto(c, P.x, y, tilt, rd && !h.L ? (one ? 2 : 1) : 0, rd && !h.R ? (one ? 2 : 1) : 0, tn);
     // 削り くず(長い 白い くるくる)が 舞って 皿へ
     for (i = M.curls.length - 1; i >= 0; i--) { var u = M.curls[i], a = clamp((tn - u.t0) / 700, 0, 1), e = ease(a), cx = lerp(u.x, u.tx, e), cy = lerp(u.y, u.ty, e) - Math.sin(a * Math.PI) * 260;
-      var cw2 = u.bad ? 150 : 120; c.save(); c.translate(cx, cy); c.rotate(a * 5 + u.r); if (u.bad) c.globalAlpha = 0.85; c.drawImage(img.negipile, -cw2 / 2, -cw2 * 0.6, cw2, cw2 * 1.2); c.restore();   // 削り くず(白髪ねぎの 写真)
+      var cw2 = u.bad ? 150 : 120; c.save(); c.translate(cx, cy); c.rotate(a * 5 + u.r); if (u.bad) c.globalAlpha = 0.85; c.drawImage(PREP ? img.cabshreds : img.negipile, -cw2 / 2, -cw2 * 0.6, cw2, cw2 * 1.2); c.restore();   // 削り くず(白髪ねぎの 写真)
       if (a >= 1) { if (!u.bad) M.pile.push(1); play('plate'); M.curls.splice(i, 1); } }
     // 引いている間の 削り音・ふるえ
     if (sk) { M.v = M.v * 0.7 + 0.3 * Math.max(0, (y - M.lastY)) / Math.max(0.001, dt); if (tn - M.hapT > 70) { M.hapT = tn; haptic('scrape'); } } else M.v *= 0.6;
@@ -1438,7 +1591,7 @@
   // 手回しドリルの 写真 3 枚(crank_body = 軸とチャック / crank_wheel = 歯車 / crank_hand = 取っ手を握る手)。歯車の軸 = 絵の (259.7, 327.3)、ドリルの先 = (257.7, 627.3)、取っ手 = (426.7, 409)
   var CK = 1.25, CHUB = [259.7, 327.3], CTIP = [257.7, 627.3], CKNOB = [426.7, 409], CA0 = Math.atan2(CKNOB[1] - CHUB[1], CKNOB[0] - CHUB[0]), CKR = Math.hypot(CKNOB[0] - CHUB[0], CKNOB[1] - CHUB[1]);
   function crankC() { var s = bgS(); return { x: bgX() + BOWL.cx * s, y: Math.round(BOWL.cy * s - 20 - (CTIP[1] - CHUB[1]) * CK) }; }   // 軸 = ドリルの先が 麺の鉢の まん中に来る所
-  function crankStart(sd) { return { kind: 'crank', g: new GT.Crank(sd), a: CA0, clickA: 0, fly: [], snapT: -1e9, served: 0 }; }
+  function crankStart(sd, D) { return { kind: 'crank', g: new GT.Crank(sd, stepCfg(GT.CRANK, D)), a: CA0, clickA: 0, fly: [], snapT: -1e9, served: 0 }; }
   function crankFrame(tn, dt) {
     var M = mini, g = M.g, t = tn - T0 - (fake != null ? 0 : 24), c = fx, C = crankC(), s = bgS(), bx = bgX() + BOWL.cx * s, by = BOWL.cy * s, i;
     if (st === 'MINI') handleMini(g.advance(t));
@@ -1449,7 +1602,7 @@
     c.save(); c.translate(C.x, C.y); c.rotate(M.a - CA0); c.translate(-C.x, -C.y); c.shadowColor = 'rgba(20,8,2,.4)'; c.shadowBlur = 22; c.shadowOffsetY = 16; c.drawImage(img.crank_wheel, ox, oy, cw, chh); c.restore();
     var wd = g.wound, need = g.ph().need, k = clamp(wd / need, 0, 1);
     c.save(); c.translate(bx, by - 30 - k * 30);
-    var nw = 70 + k * 190; c.rotate(M.a * 0.6); c.shadowColor = 'rgba(20,8,2,.35)'; c.shadowBlur = 12; c.shadowOffsetY = 8; c.drawImage(img.noodle, -nw / 2, -nw * 0.5, nw, nw * img.noodle.height / img.noodle.width);   // 巻きついた 麺(写真。巻くほど 大きく)
+    var nw = 70 + k * 190; c.rotate(M.a * 0.6); c.shadowColor = 'rgba(20,8,2,.35)'; c.shadowBlur = 12; c.shadowOffsetY = 8; var nim = PREP ? img.fball : img.noodle; c.drawImage(nim, -nw / 2, -nw * 0.5, nw, nw * nim.height / nim.width);   // 巻きついた 麺(写真。巻くほど 大きく)
     c.restore();
     var dxh = (Math.cos(M.a) - Math.cos(CA0)) * CKR * CK, dyh = (Math.sin(M.a) - Math.sin(CA0)) * CKR * CK;
     c.save(); c.shadowColor = 'rgba(20,8,2,.45)'; c.shadowBlur = 22; c.shadowOffsetY = 16; var hw = img.crank_hand.width * CK, hh = img.crank_hand.height * CK; c.drawImage(img.crank_hand, ox + dxh, oy + dyh, hw, hh); c.restore();   // 手 + 前腕(写真。腕は 生成で 右下へ 描き足した)
@@ -1467,7 +1620,7 @@
     if (g.f) { var steps = Math.floor(M.a / (Math.PI / 4)); if (steps !== M.clickA) { M.clickA = steps; play('ratchet'); haptic('crank'); } }
     // 出来上がった ひと口(上へ 飛んでいく)
     for (i = M.fly.length - 1; i >= 0; i--) { var f = M.fly[i], a = clamp((tn - f.t0) / 600, 0, 1), e = ease(a); c.save(); c.translate(lerp(bx, f.tx, e), lerp(by - 60, -100, e)); c.rotate(e * 3);
-      c.drawImage(img.noodle, -70, -77, 140, 155); c.restore(); if (a >= 1) M.fly.splice(i, 1); }
+      if (PREP) c.drawImage(img.fball, -70, -70, 140, 140); else c.drawImage(img.noodle, -70, -77, 140, 155); c.restore(); if (a >= 1) M.fly.splice(i, 1); }
     drawPops(c, tn); if (st === 'MINI' || st === 'MINI_END') drawHud(c, tn);
   }
   function crankEv(e) {
@@ -1615,16 +1768,27 @@
     kanna: { start: kannaStart, frame: kannaFrame, ev: kannaEv },
     crank: { start: crankStart, frame: crankFrame, ev: crankEv, down: crankDown, move: crankMove, up: crankUp },
     smash: { start: smashStart, frame: smashFrame, ev: smashEv, down: smashDown, move: function () {}, up: function () {} },
-    saw: { start: sawStart, frame: sawFrame, ev: sawEv, down: sawDown, move: sawMove, up: sawUp }
+    saw: { start: sawStart, frame: sawFrame, ev: sawEv, down: sawDown, move: sawMove, up: sawUp },
+    prep: { start: prepStart }
   };
+  // 仕込み = 3 工程を 続けて 1 面(かんなで キャベツ → 手回しドリルで 餡 → コーキングガンで 皮に 絞る)。mini は いまの工程の 遊びそのもの、PREP が 通しの 記録
+  var PREP = null;
+  function prepStart(sd, D) { PREP = { D: D, i: 0, res: [0, 0, 0], ok: [false, false, false], sd: sd, nextT: 0 }; return SCN[D.steps[0].k].start(sd, D); }
+  function prepCount() { var g = mini.g; return mini.kind === 'kanna' ? g.good : mini.kind === 'crank' ? g.done : g.good; }
+  function prepNext() {
+    var D = PREP.D; PREP.res[PREP.i] = prepCount(); PREP.ok[PREP.i] = PREP.res[PREP.i] >= D.steps[PREP.i].quota;
+    if (PREP.i >= D.steps.length - 1) { var n = PREP.ok.filter(Boolean).length; mini.done = n; mini.res = PREP.res.slice(); finishMini(n >= D.quota ? 'clear' : 'slow'); return; }
+    PREP.i++; var sd = PREP.sd + PREP.i * 101; T0 = now(); mini = SCN[D.steps[PREP.i].k].start(sd, D); mini.prep = true;
+    hintEl.firstChild.textContent = T(D.steps[PREP.i].how[0], D.steps[PREP.i].how[1]); hintEl.classList.add('on'); play('gong'); drawBg();
+  }
 
   // ---- 起動 ----
   function loop() { frame(now()); requestAnimationFrame(loop); }
   window.addEventListener('resize', layout);
-  Promise.all(['shop', 'kitchen', 'dumpling', 'dumpling_open', 'hand', 'hand_thin', 'hand_torn', 'head', 'drill', 'screw', 'drill_side', 'hand_stapler', 'hand_cutter', 'bg_shumai', 'bg_noodle', 'wok_boil', 'hand_kanna', 'hand_caulk', 'hand_hammer', 'hand_saw', 'cucumber', 'ribs', 'crank_wheel', 'crank_body', 'crank_hand', 'roll', 'staple', 'tofu', 'ruler', 'wrapper', 'shumai_top', 'pork', 'board', 'negipile', 'noodle', 'cucumber_smash', 'pegboard', 'grade_S', 'grade_A', 'grade_B', 'grade_F', 'stapler_hand', 'grade_H', 'g_kou', 'g_soku', 'g_tei', 'chunk0', 'chunk1', 'chunk2', 'chunk3', 'chunk4', 'chunk5', 'chunk6', 'chunk7'].map(function (n) { return load(n, 'assets/' + n + '.webp'); }).concat(document.fonts ? [
+  Promise.all(['shop', 'kitchen', 'dumpling', 'dumpling_open', 'hand', 'hand_thin', 'hand_torn', 'head', 'drill', 'screw', 'drill_side', 'hand_stapler', 'hand_cutter', 'bg_shumai', 'bg_noodle', 'wok_boil', 'hand_kanna', 'hand_caulk', 'hand_hammer', 'hand_saw', 'cucumber', 'ribs', 'crank_wheel', 'crank_body', 'crank_hand', 'roll', 'staple', 'tofu', 'ruler', 'wrapper', 'shumai_top', 'pork', 'board', 'negipile', 'noodle', 'cucumber_smash', 'pegboard', 'grade_S', 'grade_A', 'grade_B', 'grade_F', 'stapler_hand', 'grade_H', 'g_kou', 'g_soku', 'g_tei', 'board_cab', 'cabshreds', 'gwrap', 'fball', 'yaki', 'ebi', 'bg_pork', 'shop_noren', 'shop_lantern', 'drill_red', 'drill_black', 'drill_gold', 'chunk0', 'chunk1', 'chunk2', 'chunk3', 'chunk4', 'chunk5', 'chunk6', 'chunk7'].map(function (n) { return load(n, 'assets/' + n + '.webp'); }).concat(document.fonts ? [
       document.fonts.load('40px "Potta"', 'ドリル飯店ぴたっDrillDiner').catch(function () {}), document.fonts.load('40px "YujiSyuku"', '餃子麻婆豆腐').catch(function () {}),
       Promise.all(['500', '700', '900'].map(function (w) { return document.fonts.load(w + ' 40px "ZenKaku"', '餃子0123Aa'); })).catch(function () {})] : [])).then(function () {
-    ['hand', 'hand_thin', 'hand_torn'].forEach(function (n) { spr[n] = bake(img[n], HS, 34, 30); }); spr.drill = bake(img.drill, DRL_F.ds, 30, 34); spr.drill_side = bake(img.drill_side, DRL_S.ds, 30, 34);
+    ['hand', 'hand_thin', 'hand_torn'].forEach(function (n) { spr[n] = bake(img[n], HS, 34, 30); }); rebakeDrill(); spr.drill_side = bake(img.drill_side, DRL_S.ds, 30, 34);
     ready = true; layout(); lastT = now();
     titleEl.querySelector('h1 img').alt = T('ドリル飯店', 'Drill Diner');   // 題字 = 看板の絵(香港の金漆招牌。英語でも 看板は日本語のまま、下に 英語の名前)
     if (!JA) titleEl.classList.add('en');
@@ -1638,7 +1802,7 @@
     get audio() { return AC ? { state: AC.state, rate: AC.sampleRate } : null; }, get drillSnd() { return drillSnd; },
     get settings() { return SET; }, get S() { return S; }, set S(v) { S = v; }, get mini() { return mini; }, cutY: function () { return cutY(); }, smashC: function () { return smashC(); }, sawLine: function () { return sawLine(mini); }, get prog() { return PROG; }, openCard: openCard, boardOpen: boardOpen, toTitle: toTitle,
     tap: function (x, y) { miniDown(now(), { x: x, y: y }); }, kDown: function (id, x, y, mouse) { kannaDown(now(), id, { x: x, y: y }, !!mouse); }, kMove: function (id, x, y) { kannaMove(now(), id, { x: x, y: y }); }, kUp: function (id) { kannaUp(now(), id); }, crankC: function () { return crankC(); }, caulkC: function () { return caulkC(); }, move: function (x, y) { miniMove(now(), { x: x, y: y }); }, lift: function (x, y) { miniUp(now(), { x: x, y: y }); }, get bgm() { return { song: BGM.song, step: BGM.step, on: BGM.on, step: BGM.step, layer: BGM.layer, tempo: BGM.tempo, gain: bgmBus ? bgmBus.gain.value : null, sfxGain: sfx ? sfx.gain.value : null }; }, setOpen: setOpen,
-    grade: function (g, x, y, why) { grade(g, x, y, why); }, cutOff: CUTOFF, cutEnds: function (L) { return cutEnds(L); },   // 判定の札だけ 出す(見た目の検査用)
+    grade: function (g, x, y, why) { grade(g, x, y, why); }, get shop() { return SHOP; }, get run() { return run; }, shopOpen: function (on) { shopOpen(on); }, buy: function (i) { buy(SHOPI[i]); }, get PREP() { return PREP; }, prepNext: function () { prepNext(); }, get STG() { return STG; }, cutOff: CUTOFF, cutEnds: function (L) { return cutEnds(L); },   // 判定の札だけ 出す(見た目の検査用)
     soundLog: soundLog, hapticLog: hapticLog, clockIn: clockIn, press: function () { press(now()); }, release: function () { release(now()); },
     setFake: function (t) { fake = t; lastT = t == null ? performance.now() : t; }, get fake() { return fake; },
     step: function (ms, each) { each = each || 16; for (var e = 0; e < ms - 1e-6; e += each) { fake += Math.min(each, ms - e); frame(fake); } },

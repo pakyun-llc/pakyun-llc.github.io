@@ -175,13 +175,13 @@
     time: 40000, quota: 9, top: 19, R: 200, tol: 46, near: 60, bins: 36, need: 34, reset: 450,
     phases: [ { from: 0, size: 1 }, { from: 20000, size: 0.66 } ]     // 20 秒: 子ども席の 小粒(花が 小さい)
   };
-  function flowerR(R, a) { return R * (1 + 0.16 * Math.cos(5 * a)); }
+  function flowerR(R, a, amp) { return R * (1 + (amp == null ? 0.16 : amp) * Math.cos(5 * a)); }   // amp = 花の 出っぱり(餃子の皮 = 0 = 丸)
   function Caulk(seed, cfg) {
     this.cfg = cfg || CAULK; this.firstT = null; this.endT = null; this.over = null; this.stage = 0;
     this.good = 0; this.perfect = 0; this.bad = 0; this.log = []; this.stroke = null; this.readyT = 0; this.n = 0;
   }
   Caulk.prototype.size = function () { return this.cfg.phases[this.stage].size; };
-  Caulk.prototype.radius = function (a) { return flowerR(this.cfg.R * this.size(), a); };
+  Caulk.prototype.radius = function (a) { return flowerR(this.cfg.R * this.size(), a, this.cfg.petal); };
   Caulk.prototype.advance = function (t, out) {
     out = out || []; if (this.over) return out;
     if (this.firstT == null) { if (t >= IDLE_MS) { this.over = 'idle'; out.push({ type: 'end', t: IDLE_MS, kind: 'idle' }); } return out; }

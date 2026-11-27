@@ -134,6 +134,19 @@ html[lang=en] #ladder span{padding:calc(var(--u)*6) calc(var(--u)*3)}
 #b-title span{display:inline-block}
 #b-note{font-weight:700;font-size:calc(var(--u)*32);margin-top:calc(var(--u)*18);opacity:.7;min-height:1.4em}
 #b-btns{margin-top:calc(var(--u)*22);display:flex;justify-content:center;gap:calc(var(--u)*18)}
+/* 店(チップの 使い道) */
+#shop{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(20,6,2,.55);opacity:0;visibility:hidden;
+  transition:opacity 200ms var(--ease-out),visibility 0s linear 200ms;touch-action:manipulation}
+#shop.on{opacity:1;visibility:visible;transition:opacity 220ms var(--ease-out)}
+#shop.on .panel{transform:none;transition-duration:240ms}
+#p-chips{text-align:center;font-weight:900;font-size:calc(var(--u)*46);color:var(--red);margin-bottom:calc(var(--u)*6)}
+.prow{display:flex;align-items:center;justify-content:space-between;gap:calc(var(--u)*18);padding:calc(var(--u)*20) 0;border-bottom:calc(var(--u)*2) solid rgba(35,26,20,.1)}
+.prow .pl{display:flex;flex-direction:column;gap:calc(var(--u)*4)}
+.prow .pn{font-weight:900;font-size:calc(var(--u)*42)}
+.prow .pd{font-weight:500;font-size:calc(var(--u)*30);opacity:.75}
+.prow button{white-space:nowrap;height:calc(var(--u)*96);min-width:calc(var(--u)*200);padding:0 calc(var(--u)*22);font-size:calc(var(--u)*36);font-weight:900;background:var(--red);color:#fff}
+.prow button:disabled{background:rgba(35,26,20,.18);color:rgba(35,26,20,.5)}
+#p-close{display:block;margin:calc(var(--u)*30) auto 0;min-width:calc(var(--u)*360)}
 /* 設定 */
 #set{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(20,6,2,.55);opacity:0;visibility:hidden;
   transition:opacity 200ms var(--ease-out),visibility 0s linear 200ms;touch-action:manipulation}
@@ -162,13 +175,14 @@ html[lang=en] .panel h2{letter-spacing:.04em}
   <div id="title" class="txt"><div class="sign"><h1><img src="assets/sign.webp" alt="ドリル飯店" width="1400" height="440"></h1></div><div class="en-name">Drill Diner</div><button id="rank" type="button"><span class="lv"></span><span class="nm"></span><span class="go"></span></button><p></p></div>
   <div id="boss" class="txt"><span><b></b><i></i></span></div>
   <div id="hint" class="txt"><span></span></div>
-  <div id="start"><button id="b-in" class="main"></button><div class="subs"><button id="b-board" class="sub"></button><button id="b-set" class="sub"></button></div></div>
+  <div id="start"><button id="b-in" class="main"></button><div class="subs"><button id="b-board" class="sub"></button><button id="b-shop" class="sub"></button><button id="b-set" class="sub"></button></div></div>
   <div id="card"><div class="board"><div id="c-no"></div><div id="c-dish"></div><div id="c-tool"></div><div class="say"><b id="c-who"></b><i id="c-line"></i></div><div id="c-how"></div><div id="c-goal"></div>
     <div id="c-btns"><button id="c-go" class="main"></button><button id="c-back" class="sub"></button></div></div></div>
   <div id="result" class="txt"><div class="board"><div id="r-head"></div><div id="r-dish"></div><div class="rrow"><div id="r-big"></div><div class="rside"><div id="r-label"></div><div id="r-rank"></div></div></div><div id="r-line"></div><div id="r-promo"></div><div id="r-stat"></div></div>
-    <div id="r-btns"><button id="b-next" class="main"></button><div class="subs"><button id="b-again" class="sub"></button><button id="b-board2" class="sub"></button><button id="b-share" class="sub"></button></div></div></div>
+    <div id="r-btns"><button id="b-next" class="main"></button><div class="subs"><button id="b-again" class="sub"></button><button id="b-board2" class="sub"></button><button id="b-shop2" class="sub"></button><button id="b-share" class="sub"></button></div></div></div>
   <div id="board" role="dialog" aria-modal="true" aria-labelledby="b-title"><div class="board"><div id="b-title"><b></b><span></span></div><div id="ladder"></div><div id="peg"><canvas id="pegc"></canvas></div><div id="b-note"></div>
     <div id="b-btns"><button id="b-play" class="main"></button><button id="b-close" class="sub"></button></div></div></div>
+  <div id="shop" role="dialog" aria-modal="true" aria-labelledby="p-title"><div class="panel"><h2 id="p-title"></h2><div id="p-chips"></div><div id="p-rows"></div><button id="p-close" class="main"></button></div></div>
   <div id="set" role="dialog" aria-modal="true" aria-labelledby="s-title"><div class="panel"><h2 id="s-title"></h2><div id="s-rows"></div><button id="s-close" class="main"></button></div></div>
 </div>
 <script src="js/game.js"></script>
