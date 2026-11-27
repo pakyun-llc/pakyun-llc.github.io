@@ -75,8 +75,9 @@
     var C = window.AudioContext || window.webkitAudioContext; if (!C) return;
     // 11-27 12 回目(iPhone の 画面収録で ビリビリ): 大きめの 緩衝(balanced)・端末の 音の速さに 合わせる(アプリが 教えてくれる時)・
     // 最後は 決めた値の リミッタ(既定の 圧縮器は 自動で +13 dB ほど 持ち上げて 0 dB 近くまで 張り付く)
-    var opt = { latencyHint: 'balanced' }, nsr = window.GZNative && +window.GZNative.sampleRate; if (nsr >= 22050 && nsr <= 96000) opt.sampleRate = nsr;
-    try { AC = new C(opt); } catch (e) { AC = new C(); }
+    var opt = { latencyHint: window.GZNative ? 'playback' : 'balanced' }, nsr = window.GZNative && +window.GZNative.sampleRate; if (nsr >= 22050 && nsr <= 96000) opt.sampleRate = nsr;   // 13 回目: アプリでは 大きめの 緩衝 + 端末の 速さ(44.1 kHz)ちょうど
+    var acErr = ''; try { AC = new C(opt); } catch (e) { acErr = String(e); try { AC = new C({ sampleRate: opt.sampleRate }); } catch (e2) { acErr += ' / ' + e2; AC = new C(); } }
+    if (window.GZNative && GZNative.log) GZNative.log('audio ctx=' + AC.sampleRate + ' native=' + nsr + ' base=' + (AC.baseLatency || 0).toFixed(4) + ' opt=' + JSON.stringify(opt) + ' err=' + acErr);
     master = AC.createGain(); master.gain.value = 0.6; setTimeout(voiceLoad, 0);
     var comp = AC.createDynamicsCompressor(); comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 12; comp.attack.value = 0.003; comp.release.value = 0.15;
     var post = AC.createGain(); post.gain.value = 0.8; master.connect(comp); comp.connect(post); post.connect(AC.destination);
@@ -101,6 +102,7 @@
     if (!AC) return; var old = AC; AC = null; master = sfx = bgmBus = noiseBuf = analyser = DR = null; SQS = PLS = SWS = CUTS = null; VOICE = {}; voiceLoading = false; voiceSrc = null; BGM.on = false;
     try { old.close(); } catch (e) {}
     soundLog.push('reset'); audioOn();
+    if (window.GZNative && GZNative.log) GZNative.log('audio reset ctx=' + (AC && AC.sampleRate) + ' native=' + GZNative.sampleRate);
   }
   window.GZAudioReset = audioReset;
   function soundSync() { if (sfx) sfx.gain.setTargetAtTime(SET.sfx ? 1 : 0, AC.currentTime, 0.02); bgmSync(); }
@@ -524,7 +526,7 @@
     { kind: 'drill', bg: 'kitchen', no: ['一品目', 'Order 1'], dish: ['ネジ水餃子', 'Screwed Dumplings'], tool: ['電動ドリル', 'Power drill'], take: ['ドリルを持つ', 'Grab the drill'],
       who: ['大将', 'Chef'], line: ['お前の包んだのは 茹でたら開く。ネジで 閉めとけ', 'Yours pop open in the pot. Screw them shut.'], voice: 'open',
       how: ['長押しで ネジを締める。頭が皮に沈んだら 離す', 'Hold to drive the screw. Let go when the head sinks in.'],
-      goal: ['茹で上がり(開かない餃子)', 'Cooked (did not burst)'], unit: ['コ', ''], quota: 5, best: ['最高 ', 'Best '] },
+      goal: ['開かずに 茹で上がった 餃子', 'Dumplings that stay shut when boiled'], unit: ['コ', ''], quota: 5, best: ['最高 ', 'Best '] },
     { kind: 'smash', bg: 'kitchen', no: ['二品目', 'Order 2'], dish: ['叩ききゅうり', 'Smashed Cucumber'], tool: ['金づち', 'Hammer'], take: ['金づちを持つ', 'Grab the hammer'],
       who: ['大将', 'Chef'], line: ['まかないの 前菜は 叩ききゅうりや。金づちで ひびを 入れろ', 'Staff meal starter: smashed cucumber. Crack it with a hammer.'],
       how: ['赤い印を 一回ずつ 叩く。同じ所を 二回 叩くと つぶれる', 'Tap each red mark once. Hit the same spot twice and it turns to mush.'],
@@ -545,7 +547,7 @@
     { kind: 'kanna', bg: 'kitchen', no: ['六品目', 'Order 6'], dish: ['白髪ねぎ', 'Shredded Leek'], tool: ['かんな', 'Hand plane'], take: ['かんなを両手で持つ', 'Grab the plane with both hands'],
       who: ['大将', 'Chef'], line: ['締めの麺に 白髪ねぎが要る。大工の かんなで 薄く削げ', 'The noodles need shredded leek. Shave it thin with a carpenter\'s plane.'],
       how: ['かんなを 両手で 持って、手前に 引く(2 本の指で 左右の取っ手)', 'Hold the plane with both hands (two fingers on the two grips) and pull it toward you.'],
-      goal: ['薄く削いだ ねぎ', 'Thin leek shavings'], unit: ['枚', ''], quota: 12, best: ['最高 ', 'Best '] },
+      goal: ['薄く削いだ 白髪ねぎ', 'Thin leek shreds'], unit: ['枚', ''], quota: 12, best: ['最高 ', 'Best '] },
     { kind: 'saw', bg: 'kitchen', no: ['七品目', 'Order 7'], dish: ['骨付きスペアリブ', 'Spare Ribs'], tool: ['のこぎり', 'Pull saw'], take: ['のこぎりを持つ', 'Grab the saw'],
       who: ['幹事', 'Party host'], line: ['メインは 揚げたスペアリブや。骨ごと 切り分けて', 'The main is fried spare ribs. Cut them, bones and all.'],
       how: ['鉛筆の線に 指を置いて、上下に 往復させて 切る', 'Put your finger on the pencil line and saw up and down.'],
@@ -553,7 +555,7 @@
     { kind: 'crank', bg: 'noodle', no: ['八品目', 'Order 8'], dish: ['ねじり葱そば', 'Twisted Leek Noodles'], tool: ['手回しドリル', 'Hand drill'], take: ['手回しドリルを持つ', 'Grab the hand drill'],
       who: ['常連', 'Regular'], line: ['締めは 麺や。ひと口ずつ 巻いて 出してくれ', 'Noodles to finish. Twist them into bites for us.'],
       how: ['指で 右回りに 円を描いて ハンドルを回す。速すぎると 麺が切れる', 'Draw circles clockwise to turn the crank. Too fast and the noodles snap.'],
-      goal: ['巻いた ひと口', 'Twisted bites'], unit: ['口', ''], quota: 8, best: ['最高 ', 'Best '] }
+      goal: ['巻きつけた そばの ひと口', 'Twisted noodle bites'], unit: ['口', ''], quota: 8, best: ['最高 ', 'Best '] }
   ];
   // この先(写真を作ってから。いまは 工具掛けに 輪郭と「？」だけ)
   var FUTURE = [];        // 11-27: 六品目まで そろった(前は ここに この先の 3 つ)
@@ -970,8 +972,8 @@
   function pill(c, x, y, w, h) { c.fillStyle = 'rgba(28,12,6,.74)'; rr(c, x, y, w, h, h / 2); c.fill(); }
   function drawHud(c, tn) {
     var D = STG[S], t = tn - T0 - (fake != null ? 0 : 24), y = Math.round(H * 0.045) + 16, i, left, tot, got, lab;
-    if (D.kind === 'drill') { left = game.left(t); tot = game.TIME; got = game.closed; lab = T('閉めた', 'Shut'); }
-    else { left = mini.g.left(t); tot = mini.g.cfg.time; got = ({ staple: mini.g.closed, cut: mini.g.cuts, crank: mini.g.done, smash: mini.g.done, saw: mini.g.done })[D.kind]; if (got == null) got = mini.g.good; lab = T(({ staple: '留めた', cut: '細切り', caulk: '焼売', kanna: '削いだ', crank: '巻いた', smash: '叩いた', saw: '切った' })[D.kind], ({ staple: 'Done', cut: 'Strips', caulk: 'Shumai', kanna: 'Shavings', crank: 'Bites', smash: 'Cucumbers', saw: 'Ribs' })[D.kind]); }
+    if (D.kind === 'drill') { left = game.left(t); tot = game.TIME; got = game.closed; lab = T('餃子', 'Dumplings'); }
+    else { left = mini.g.left(t); tot = mini.g.cfg.time; got = ({ staple: mini.g.closed, cut: mini.g.cuts, crank: mini.g.done, smash: mini.g.done, saw: mini.g.done })[D.kind]; if (got == null) got = mini.g.good; lab = T(({ staple: '春巻', cut: '細切り', caulk: '焼売', kanna: '白髪ねぎ', crank: 'ひと口', smash: 'きゅうり', saw: 'スペアリブ' })[D.kind], ({ staple: 'Spring rolls', cut: 'Strips', caulk: 'Shumai', kanna: 'Leek shreds', crank: 'Bites', smash: 'Cucumbers', saw: 'Ribs' })[D.kind]); }   // 11-27 13 回目(ユウキさん「閉めたっていう表現微妙」)= 数えている 料理の 名前
     var k = left / tot;
     c.fillStyle = 'rgba(28,12,6,.74)'; rr(c, 54, y - 6, 972, 30, 15); c.fill();
     if (k > 0.004) { c.fillStyle = k < 0.2 ? RED : PAPER; rr(c, 60, y, Math.max(18, 960 * k), 18, 9); c.fill(); }
