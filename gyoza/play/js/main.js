@@ -285,7 +285,10 @@
   function setMode() { FRONT = SET.mode !== 'side'; DRL = FRONT ? DRL_F : DRL_S; DS = DRL.ds; }
   setMode();
   var BGI = { w: 1188, h: 2112, cx: 600 };                                    // 店の写真(shop / shop_pot は同じ構図)。cx = 画面の真ん中に来る x
-  var POTW = { cx: 608, cy: 960, rx: 430, ry: 178 };                           // 11-27: kitchen_pot(= cn_stove_pot。火の上の大鍋)の 湯の面(前は 台の上の鍋 600, 1300 / 客席の shop_pot 607, 1313)
+  var POTW = { cx: 600, cy: 1140, rx: 470, ry: 225 };   // 11-27(8 回目): wok_boil(= cn_wok_boil。厨房の奥の 中華鍋に 寄った写真)の 湯の面。前 = 火の上の大鍋 608, 960 / 台の上の鍋 600, 1300
+  // 茹でる前に 厨房の写真のまま 奥の中華鍋へ ズーム → 寄りの写真へ 重ねて 切り替える(写真の座標: 奥の鍋の まん中 = WOK0)
+  var WOK0 = { x: 960, y: 520 }, ZOOM_MS = (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) ? 0 : 1400, ZOOM_K = 4.6;
+  var _unused_pot = { cx: 608, cy: 960, rx: 430, ry: 178 };                           // 11-27: kitchen_pot(= cn_stove_pot。火の上の大鍋)の 湯の面(前は 台の上の鍋 600, 1300 / 客席の shop_pot 607, 1313)
   var PLATE = { cx: 600, cy: 1310, rx: 300, ry: 226 };                         // 11-27: 一品目も 厨房へ = kitchen の 大皿(前は 客席 shop の 618, 1367, 361, 234)
   function rnd(seed) { return G.rng(seed); }
   function bake(im, sc, blur, oy) {                 // 影つきで 先に焼いておく(毎コマ影を計算しない)
@@ -386,9 +389,9 @@
     c.restore();
   }
   function drawBg() {
-    sx(bg); var boilBg = st === 'BOIL' || (st === 'RESULT' && boil), s = bgS(), b = st === 'TITLE' || (st === 'CARD' && cardEnd) ? 'shop' : STG[S].bg, kit = b !== 'shop';
+    sx(bg); var boilBg = (st === 'BOIL' || (st === 'RESULT' && boil)) && boil && boil.shown, s = bgS(), b = st === 'TITLE' || (st === 'CARD' && cardEnd) ? 'shop' : STG[S].bg, kit = b !== 'shop';
     bg.fillStyle = '#2c160e'; bg.fillRect(0, 0, W, H);
-    bg.drawImage(boilBg ? img.kitchen_pot : ({ shop: img.shop, kitchen: img.kitchen, shumai: img.bg_shumai, noodle: img.bg_noodle })[b], bgX(), 0, BGI.w * s, H);   // 二品目から = 奥の厨房(同じ大きさ・構図の写真。四品目 = せいろ・六品目 = 麺の鉢)
+    bg.drawImage(boilBg ? img.wok_boil : ({ shop: img.shop, kitchen: img.kitchen, shumai: img.bg_shumai, noodle: img.bg_noodle })[b], bgX(), 0, BGI.w * s, H);   // 二品目から = 奥の厨房(同じ大きさ・構図の写真。四品目 = せいろ・六品目 = 麺の鉢)
     if (!kit) drawMenu(bg);
   }
   function traySlot(i) {                             // 大皿の上。奥の列から 並べる(手前は 手に隠れる)。20 コを超えたら 少しずらして重ねる
@@ -571,7 +574,7 @@
       var d = game.done[game.done.length - n + i], rad = Math.sqrt((i + 0.6) / n), th = i * 2.39996 + 0.7;
       items.push({ d: d, cv: tray[game.done.length - n + i].cv, x: Math.cos(th) * rad * 0.74, y: Math.sin(th) * rad * 0.66, drop: 700 + i * gap, open: d.result === 'loose', ph: i * 1.7, landed: false, judged: false });
     }
-    boil = { t0: now(), items: items, shut: 0, opened: 0, extraShut: 0, end: 700 + n * gap + 350 + 700 + 900, bub: 0 };
+    boil = { t0: now() + ZOOM_MS, z0: now(), shown: !ZOOM_MS, items: items, shut: 0, opened: 0, extraShut: 0, end: 700 + n * gap + 350 + 700 + 900, bub: 0 };
     // 画面に出しきれない分(21 コ目から)は 数だけ足す
     for (i = 0; i < game.done.length - n; i++) if (game.done[i].result === 'closed') boil.extraShut++;
     st = 'BOIL'; drawBg();
@@ -849,7 +852,15 @@
     }
   }
   // ---- 茹でる ----
+  function drawZoom(c, tn) {                         // 厨房の写真のまま 奥の中華鍋へ 寄る(ease-in-out)→ 終わりの 3 割で 寄りの写真を 重ねる
+    var b = boil, a = clamp((tn - b.z0) / ZOOM_MS, 0, 1), e = a < 0.5 ? 4 * a * a * a : 1 - Math.pow(-2 * a + 2, 3) / 2, s = bgS(), x0 = bgX();
+    var P = { x: x0 + WOK0.x * s, y: WOK0.y * s }, Q = { x: x0 + POTW.cx * s, y: POTW.cy * s }, z = lerp(1, ZOOM_K, e);
+    c.save(); c.translate(lerp(P.x, Q.x, e), lerp(P.y, Q.y, e)); c.scale(z, z); c.translate(-P.x, -P.y); c.drawImage(img.kitchen, x0, 0, BGI.w * s, H); c.restore();
+    var f = clamp((a - 0.7) / 0.3, 0, 1); if (f > 0) { c.globalAlpha = f; c.drawImage(img.wok_boil, x0, 0, BGI.w * s, H); c.globalAlpha = 1; }
+    if (a >= 1 && !b.shown) { b.shown = true; drawBg(); }
+  }
   function drawBoil(tn, dt) {
+    if (!boil.shown) { drawZoom(fx, tn); return; }
     var c = fx, b = boil, t = tn - b.t0, s = bgS(), i, g, py = Math.round(H * 0.3);
     var wx = bgX() + POTW.cx * s, wy = POTW.cy * s, rx = POTW.rx * s, ry = POTW.ry * s;
     c.save(); c.beginPath(); c.ellipse(wx, wy, rx, ry, 0, 0, 7); c.clip();   // 泡(写真の湯の上に足す)
@@ -1469,7 +1480,7 @@
   // ---- 起動 ----
   function loop() { frame(now()); requestAnimationFrame(loop); }
   window.addEventListener('resize', layout);
-  Promise.all(['shop', 'kitchen', 'dumpling', 'dumpling_open', 'hand', 'hand_thin', 'hand_torn', 'head', 'drill', 'screw', 'drill_side', 'hand_stapler', 'hand_cutter', 'bg_shumai', 'bg_noodle', 'kitchen_pot', 'hand_kanna', 'hand_caulk', 'hand_hammer', 'hand_saw', 'cucumber', 'ribs', 'crank_wheel', 'crank_body', 'crank_hand'].map(function (n) { return load(n, 'assets/' + n + '.webp'); }).concat(document.fonts ? [
+  Promise.all(['shop', 'kitchen', 'dumpling', 'dumpling_open', 'hand', 'hand_thin', 'hand_torn', 'head', 'drill', 'screw', 'drill_side', 'hand_stapler', 'hand_cutter', 'bg_shumai', 'bg_noodle', 'wok_boil', 'hand_kanna', 'hand_caulk', 'hand_hammer', 'hand_saw', 'cucumber', 'ribs', 'crank_wheel', 'crank_body', 'crank_hand'].map(function (n) { return load(n, 'assets/' + n + '.webp'); }).concat(document.fonts ? [
       document.fonts.load('40px "Potta"', 'ドリル飯店ぴたっDrillDiner').catch(function () {}), document.fonts.load('40px "YujiSyuku"', '餃子麻婆豆腐').catch(function () {}),
       Promise.all(['500', '700', '900'].map(function (w) { return document.fonts.load(w + ' 40px "ZenKaku"', '餃子0123Aa'); })).catch(function () {})] : [])).then(function () {
     ['hand', 'hand_thin', 'hand_torn'].forEach(function (n) { spr[n] = bake(img[n], HS, 34, 30); }); spr.drill = bake(img.drill, DRL_F.ds, 30, 34); spr.drill_side = bake(img.drill_side, DRL_S.ds, 30, 34);
