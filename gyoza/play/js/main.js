@@ -70,14 +70,30 @@
   // ---- 音(全部 コードで作る)----
   // 道すじ: 効果音(sfx)と BGM(bgm)を 別々の音量で master へ。設定の 入/切 は それぞれの音量を 0 にするだけ
   var AC = null, master = null, sfx = null, bgmBus = null, noiseBuf = null, soundLog = [], analyser = null, DR = null;
+  // 11-27 15 回目: iOS アプリ(GZNative.audio がある時)は WebAudio を 作らず、音を 全部 ネイティブ(AVAudioEngine)に 頼む。
+  // WKWebView の WebAudio は 48 kHz・1024 フレームで 鳴り、画面収録(44.1 kHz)に 継ぎ目の ビリビリが 入るため。Web 版は 下の WebAudio のまま
+  var NA = (window.GZNative && window.GZNative.audio) ? window.GZNative : null, NAon = false, naLast = {}, naSent = {};
+  function na(m) { try { NA.audio(m); } catch (e) {} }
+  // 続く音(ドリル・削り・焼ける音…)は 毎コマ 呼ばれるので 30 Hz に 間引く。0 になった / 0 から 出た 時は すぐ送る
+  function naCont(id, m, on) {
+    var t = performance.now(), L = naLast[id];
+    if (!on && L === false) return;
+    if (L === on && t - (naSent[id] || 0) < 33) return;
+    naLast[id] = on; naSent[id] = t; na(m);
+  }
+  var naBgmKey = '';
+  function naBgm() {
+    if (!NA) return;
+    var m = { type: 'bgm', song: BGM.song, layer: BGM.layer, fever: BGM.fever, duck: BGM.duck, on: !!(NAon && SET.bgm && st !== 'LOAD') }, k = JSON.stringify(m);
+    if (k !== naBgmKey) { naBgmKey = k; na(m); }
+  }
   function audioOn() {
+    if (NA) { if (!NAon) { NAon = true; na({ type: 'volume', sfx: SET.sfx ? 1 : 0 }); } bgmSync(); return; }
     if (AC) { if (AC.state !== 'running' && AC.state !== 'closed') AC.resume(); bgmSync(); return; }   // 'interrupted'(電話・画面収録の 切り替え)からも 戻す
     var C = window.AudioContext || window.webkitAudioContext; if (!C) return;
     // 11-27 12 回目(iPhone の 画面収録で ビリビリ): 大きめの 緩衝(balanced)・端末の 音の速さに 合わせる(アプリが 教えてくれる時)・
     // 最後は 決めた値の リミッタ(既定の 圧縮器は 自動で +13 dB ほど 持ち上げて 0 dB 近くまで 張り付く)
-    var opt = { latencyHint: window.GZNative ? 'playback' : 'balanced' }, nsr = window.GZNative && +window.GZNative.sampleRate; if (nsr >= 22050 && nsr <= 96000) opt.sampleRate = nsr;   // 13 回目: アプリでは 大きめの 緩衝 + 端末の 速さ(44.1 kHz)ちょうど
-    var acErr = ''; try { AC = new C(opt); } catch (e) { acErr = String(e); try { AC = new C({ sampleRate: opt.sampleRate }); } catch (e2) { acErr += ' / ' + e2; AC = new C(); } }
-    if (window.GZNative && GZNative.log) GZNative.log('audio ctx=' + AC.sampleRate + ' native=' + nsr + ' base=' + (AC.baseLatency || 0).toFixed(4) + ' opt=' + JSON.stringify(opt) + ' err=' + acErr);
+    try { AC = new C({ latencyHint: 'balanced' }); } catch (e) { AC = new C(); }   // (アプリの中では ここに来ない = 上の NA)
     master = AC.createGain(); master.gain.value = 0.6; setTimeout(voiceLoad, 0);
     var comp = AC.createDynamicsCompressor(); comp.threshold.value = -12; comp.knee.value = 6; comp.ratio.value = 12; comp.attack.value = 0.003; comp.release.value = 0.15;
     var post = AC.createGain(); post.gain.value = 0.8; master.connect(comp); comp.connect(post); post.connect(AC.destination);
@@ -99,19 +115,19 @@
   }
   // 音の道を 作り直す(アプリから: 画面収録の 始め / 終わり・出力の 切り替え。ページから: 'interrupted' のあと)。次に 触った時に 鳴りはじめる
   function audioReset() {
-    if (!AC) return; var old = AC; AC = null; master = sfx = bgmBus = noiseBuf = analyser = DR = null; SQS = PLS = SWS = CUTS = SZS = null; VOICE = {}; voiceLoading = false; voiceSrc = null; BGM.on = false;
+    if (NA || !AC) return; var old = AC; AC = null; master = sfx = bgmBus = noiseBuf = analyser = DR = null; SQS = PLS = SWS = CUTS = SZS = null; VOICE = {}; voiceLoading = false; voiceSrc = null; BGM.on = false;
     try { old.close(); } catch (e) {}
     soundLog.push('reset'); audioOn();
-    if (window.GZNative && GZNative.log) GZNative.log('audio reset ctx=' + (AC && AC.sampleRate) + ' native=' + GZNative.sampleRate);
   }
   window.GZAudioReset = audioReset;
-  function soundSync() { if (sfx) sfx.gain.setTargetAtTime(SET.sfx ? 1 : 0, AC.currentTime, 0.02); bgmSync(); }
+  function soundSync() { if (NA) { na({ type: 'volume', sfx: SET.sfx ? 1 : 0 }); bgmSync(); return; } if (sfx) sfx.gain.setTargetAtTime(SET.sfx ? 1 : 0, AC.currentTime, 0.02); bgmSync(); }
   // 画面が裏に回ったら 音を止める(スマホで 鳴りっぱなしにしない)
   document.addEventListener('visibilitychange', function () { if (!AC) return; if (document.hidden) AC.suspend(); else if (AC.state === 'suspended') AC.resume(); });
   var drillSnd = { rpm: 0, load: 0, hz: 0 };
   function drillSound(rpm, load, gear) {            // 毎コマ: 回転(0〜1)・重さ(0〜1)・ギア
     var hz = (70 + 150 * rpm * (gear > 1 ? 1.32 : 1)) * (1 - 0.3 * load);
     drillSnd.rpm = rpm; drillSnd.load = load; drillSnd.hz = hz;
+    if (NA) return naCont('drill', { type: 'drill', hz: hz, rpm: rpm, load: load, motor: SHOP.motor || 0 }, rpm > 0.001);
     if (!AC || AC.state !== 'running' || !DR) return;
     var t = AC.currentTime, k = 0.018;
     DR.m.frequency.setTargetAtTime(hz, t, k); DR.w.frequency.setTargetAtTime(hz * 7.02, t, k); DR.wf.frequency.setTargetAtTime(hz * 7.02, t, k);
@@ -178,7 +194,7 @@
       mel: M(['A4 . . C5 E5 . D5 .', 'C5 . A4 . G4 . . .', 'A4 . C5 . D5 E5 G5 .', 'E5 . . . D5 . . .', 'A5 . G5 E5 D5 . E5 .', 'G5 . E5 D5 C5 . A4 .', 'C5 D5 E5 G5 A5 . G5 E5', 'A5 . . . A4 . . .']),
       bass: [['A2', 'E2'], ['F2', 'C3'], ['D2', 'A2'], ['E2', 'B2'], ['A2', 'E2'], ['C3', 'G2'], ['D2', 'E2'], ['A2', 'E2']], padN: ['E5', 'C5', 'D5', 'E5', 'A5', 'G5', 'E5', 'A5'] }
   };
-  function bgmSong(k) { k = SONGS[k] ? k : 'drill'; if (BGM.song === k) return; BGM.song = k; BGM.step = 0; BGM.pluck = {}; BGM.next = 0; }   // 曲を 替えると 頭から(弦の 焼き置きも 捨てる = 持ち歩く 量を 増やさない)
+  function bgmSong(k) { k = SONGS[k] ? k : 'drill'; if (BGM.song === k) return; BGM.song = k; BGM.step = 0; BGM.pluck = {}; BGM.next = 0; naBgm(); }   // 曲を 替えると 頭から(弦の 焼き置きも 捨てる = 持ち歩く 量を 増やさない)
   function ksBuf(f) {                                  // はじいた弦(Karplus-Strong)。1.6 秒
     var sr = AC.sampleRate, n = Math.floor(sr * 1.6), N = Math.max(2, Math.round(sr / f)), b = AC.createBuffer(1, n, sr), d = b.getChannelData(0), i, damp = f > 400 ? 0.994 : 0.997;
     for (i = 0; i < N; i++) d[i] = (Math.random() * 2 - 1) * (0.6 + 0.4 * Math.sin(Math.PI * i / N));
@@ -226,40 +242,47 @@
     o.connect(f); f.connect(g); g.connect(bgmBus); o.start(t); v.start(t); o.stop(t + dur + 0.05); v.stop(t + dur + 0.05);
   }
   function noteLen(mel, bar, k) { var n = 1; for (var j = k + 1; j < 8 && mel[bar][j] === '-'; j++) n++; return n; }   // '-' の 数だけ のばす
+  // 1 拍(8 分音符)ぶんを 鳴らす。P = どの 層を 鳴らすか(base = 旋律・低音・打ち物・銅鑼 / pad = 15 秒からの のばし / hi = 30 秒からの 拍木・鈸 / f1〜f3 = 熱の 打ち物)。
+  // アプリ用の 書き出し(tools/render_audio.mjs)も 同じ関数で 層ごとに 焼く
+  function bgmStepAt(S, s, t, e8, P) {
+    var bar = Math.floor(s / 8), k = s % 8, n = S.mel[bar][k], prev = S.mel[bar][k - 1] || S.mel[(bar + 7) % 8][7];
+    if (P.base && n !== '.' && n !== '-') {
+      var L = noteLen(S.mel, bar, k) * e8;
+      if (S.lead === 'zheng') { pluck(n, t, 0.5, k === 0 && bar % 2 === 1, S.stac ? e8 * 1.6 : 0); if (k % 2 === 0) pluck(down8(n), t + 0.012, 0.16, false, S.stac ? e8 * 1.6 : 0); }
+      else if (S.lead === 'dizi') dizi(n, t, Math.max(L, e8 * 0.9), 0.16);
+      else if (S.lead === 'pipa') pipa(n, t, Math.max(L, e8 * 0.9), 0.22);
+      else if (S.lead === 'erhu') erhu(t, prev && prev.length > 1 ? prev : n, n, Math.max(L, e8 * 1.1), 0.12);
+    }
+    if (P.base) { if (k === 0) pluck(S.bass[bar][0], t, 0.42); if (k === 4) pluck(S.bass[bar][1], t, 0.34); }
+    var PC = P.base ? S.perc : '';
+    if (PC === 'wood' && (k === 2 || k === 6)) woodblock(t, 0.1, false);
+    if (PC === 'tick' && k % 4 === 2) woodblock(t, 0.06, true);
+    if (PC === 'soft' && k === 4) woodblock(t, 0.06, false);
+    if (PC === 'drum') { if (k === 0 || k === 4) drum(t, 0.3, true); if (k === 6) drum(t, 0.18, false); if (k === 2) woodblock(t, 0.08, false); }
+    if (PC === 'fest') { if (k % 2 === 0) drum(t, k % 4 === 0 ? 0.3 : 0.18, k % 4 === 0); if (k === 4) cymbal(t, 0.04); if (k % 2 === 1) woodblock(t, 0.05, true); }
+    if (PC === 'drama') { if (k === 0 || k === 3 || k === 6) drum(t, 0.32, true); if (k === 4) drum(t, 0.2, false); if (k % 2 === 1) woodblock(t, 0.04, true); }
+    if (P.hi && k % 2 === 1 && S.perc !== 'fest' && S.perc !== 'drama') woodblock(t, 0.05, true);
+    if (P.hi && (k === 0 || k === 4)) cymbal(t, 0.035);
+    if (P.f1 && k % 2 === 1) woodblock(t, 0.045, true);        // 熱: 拍木が 細かく / 熱々: 鈸 / 神ドリル: 太鼓
+    if (P.f2 && k === 2) cymbal(t, 0.03);
+    if (P.f3 && k % 4 === 0) drum(t, 0.2, true);
+    if (P.pad && k === 0) { var pn = S.padN[bar], pp = S.padN[(bar + 7) % 8]; if (S.pad === 'erhu') erhu(t, pp, pn, e8 * 7.6, 0.05); else dizi(pn, t, e8 * 7.6, 0.06); }
+    if (P.base && s % S.gong === 0) gong(t, 196, 0.05, 2.4, bgmBus);
+  }
   function bgmTick() {
     if (!AC || AC.state !== 'running' || !BGM.on) return;
     var S = SONGS[BGM.song] || SONGS.drill, e8 = 60 / (S.bpm * BGM.tempo) / 2;   // 8 分音符(HI で 1.2 倍)
     if (BGM.next < AC.currentTime) BGM.next = AC.currentTime + 0.05;
     while (BGM.next < AC.currentTime + 0.15) {
-      var t = BGM.next, s = BGM.step % 64, bar = Math.floor(s / 8), k = s % 8, n = S.mel[bar][k], prev = S.mel[bar][k - 1] || S.mel[(bar + 7) % 8][7];
-      if (n !== '.' && n !== '-') {
-        var L = noteLen(S.mel, bar, k) * e8;
-        if (S.lead === 'zheng') { pluck(n, t, 0.5, k === 0 && bar % 2 === 1, S.stac ? e8 * 1.6 : 0); if (k % 2 === 0) pluck(down8(n), t + 0.012, 0.16, false, S.stac ? e8 * 1.6 : 0); }
-        else if (S.lead === 'dizi') dizi(n, t, Math.max(L, e8 * 0.9), 0.16);
-        else if (S.lead === 'pipa') pipa(n, t, Math.max(L, e8 * 0.9), 0.22);
-        else if (S.lead === 'erhu') erhu(t, prev && prev.length > 1 ? prev : n, n, Math.max(L, e8 * 1.1), 0.12);
-      }
-      if (k === 0) pluck(S.bass[bar][0], t, 0.42); if (k === 4) pluck(S.bass[bar][1], t, 0.34);
-      var P = S.perc;
-      if (P === 'wood' && (k === 2 || k === 6)) woodblock(t, 0.1, false);
-      if (P === 'tick' && k % 4 === 2) woodblock(t, 0.06, true);
-      if (P === 'soft' && k === 4) woodblock(t, 0.06, false);
-      if (P === 'drum') { if (k === 0 || k === 4) drum(t, 0.3, true); if (k === 6) drum(t, 0.18, false); if (k === 2) woodblock(t, 0.08, false); }
-      if (P === 'fest') { if (k % 2 === 0) drum(t, k % 4 === 0 ? 0.3 : 0.18, k % 4 === 0); if (k === 4) cymbal(t, 0.04); if (k % 2 === 1) woodblock(t, 0.05, true); }
-      if (P === 'drama') { if (k === 0 || k === 3 || k === 6) drum(t, 0.32, true); if (k === 4) drum(t, 0.2, false); if (k % 2 === 1) woodblock(t, 0.04, true); }
-      if (BGM.layer >= 2 && k % 2 === 1 && P !== 'fest' && P !== 'drama') woodblock(t, 0.05, true);
-      if (BGM.layer >= 2 && (k === 0 || k === 4)) cymbal(t, 0.035);
-      if (BGM.fever >= 1 && k % 2 === 1) woodblock(t, 0.045, true);        // 熱: 拍木が 細かく / 熱々: 鈸 / 神ドリル: 太鼓
-      if (BGM.fever >= 2 && k === 2) cymbal(t, 0.03);
-      if (BGM.fever >= 3 && k % 4 === 0) drum(t, 0.2, true);
-      if (BGM.layer >= 1 && k === 0) { var pn = S.padN[bar], pp = S.padN[(bar + 7) % 8]; if (S.pad === 'erhu') erhu(t, pp, pn, e8 * 7.6, 0.05); else dizi(pn, t, e8 * 7.6, 0.06); }
-      if (s % S.gong === 0) gong(t, 196, 0.05, 2.4, bgmBus);
+      var t = BGM.next, s = BGM.step % 64;
+      bgmStepAt(S, s, t, e8, { base: true, pad: BGM.layer >= 1, hi: BGM.layer >= 2, f1: BGM.fever >= 1, f2: BGM.fever >= 2, f3: BGM.fever >= 3 });
       BGM.log.push(s); if (BGM.log.length > 200) BGM.log.shift();
       BGM.step++; BGM.next += e8;
     }
   }
   // BGM の 入/切 と 音量(引き金を引いている間は 下げて ドリルを聞かせる)
   function bgmSync() {
+    if (NA) { BGM.on = !!(NAon && SET.bgm && st !== 'LOAD'); naBgm(); return; }
     if (!AC) return;
     var want = SET.bgm && st !== 'LOAD';
     if (want && !BGM.on) { BGM.on = true; BGM.next = 0; if (!BGM.timer) BGM.timer = setInterval(bgmTick, 30); bgmTick(); }
@@ -267,7 +290,7 @@
     bgmBus.gain.setTargetAtTime(want ? 0.2 * BGM.duck : 0, AC.currentTime, want ? 0.08 : 0.04);
   }
   function bgmDuck(k) { if (BGM.duck === k) return; BGM.duck = k; bgmSync(); }
-  function bgmLayer(n) { BGM.layer = n; BGM.tempo = n >= 2 ? 1.2 : 1; }
+  function bgmLayer(n) { BGM.layer = n; BGM.tempo = n >= 2 ? 1.2 : 1; naBgm(); }
   var SND = {
     click: function (t) { noise('highpass', 2400, 1800, 0.7, t, 0.002, 0.02, 0.2); tone('square', 180, 120, t, 0.002, 0.02, 0.08); },          // 引き金
     perfect: function (t) { noise('bandpass', 620, 220, 2.4, t, 0.005, 0.07, 0.3); tone('sine', 1568, 1568, t + 0.03, 0.003, 0.5, 0.11); tone('sine', 3136, 3136, t + 0.03, 0.003, 0.22, 0.03); },   // ぷにっ + 卓上ベルのチン
@@ -312,11 +335,13 @@
   // 四品目の 絞る音・五品目の かんなの 削り音(指が動いている間だけ。速さで 大きさが変わる)
   var SQS = null, PLS = null, SZS = null;
   function contNoise(o, type, f0, q) { if (!AC || AC.state !== 'running') return null; if (!o) { var src = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain(); src.buffer = noiseBuf; src.loop = true; f.type = type; f.Q.value = q; f.frequency.value = f0; g.gain.value = 0; src.connect(f); f.connect(g); g.connect(sfx); src.start(); o = { f: f, g: g }; } return o; }
-  var SWS = null; function sawSound(k) { SWS = contNoise(SWS, 'bandpass', 2000, 2.2); if (!SWS) return; var t = AC.currentTime; SWS.g.gain.setTargetAtTime(k > 0 ? 0.06 + 0.3 * k : 0, t, 0.02); SWS.f.frequency.setTargetAtTime(1400 + 2400 * k, t, 0.03); }   // のこぎりの ぎこぎこ
-  function squeezeSound(k) { SQS = contNoise(SQS, 'lowpass', 500, 0.9); if (!SQS) return; var t = AC.currentTime; SQS.g.gain.setTargetAtTime(k > 0 ? 0.08 + 0.18 * k : 0, t, 0.03); SQS.f.frequency.setTargetAtTime(350 + 500 * k, t, 0.04); }
-  function planeSound(k) { PLS = contNoise(PLS, 'bandpass', 3000, 1.4); if (!PLS) return; var t = AC.currentTime; PLS.g.gain.setTargetAtTime(k > 0 ? 0.06 + 0.34 * k : 0, t, 0.02); PLS.f.frequency.setTargetAtTime(2200 + 3200 * k, t, 0.03); }
+  function nCont(id, ft, q, g, f, tg, tf) { naCont(id, { type: 'cont', id: id, ft: ft, q: q, g: g, f: f, tg: tg, tf: tf }, g > 0); }   // アプリ: 続く雑音を ネイティブで
+  var SWS = null; function sawSound(k) { if (NA) return nCont('saw', 'bandpass', 2.2, k > 0 ? 0.06 + 0.3 * k : 0, 1400 + 2400 * k, 0.02, 0.03); SWS = contNoise(SWS, 'bandpass', 2000, 2.2); if (!SWS) return; var t = AC.currentTime; SWS.g.gain.setTargetAtTime(k > 0 ? 0.06 + 0.3 * k : 0, t, 0.02); SWS.f.frequency.setTargetAtTime(1400 + 2400 * k, t, 0.03); }   // のこぎりの ぎこぎこ
+  function squeezeSound(k) { if (NA) return nCont('squeeze', 'lowpass', 0.9, k > 0 ? 0.08 + 0.18 * k : 0, 350 + 500 * k, 0.03, 0.04); SQS = contNoise(SQS, 'lowpass', 500, 0.9); if (!SQS) return; var t = AC.currentTime; SQS.g.gain.setTargetAtTime(k > 0 ? 0.08 + 0.18 * k : 0, t, 0.03); SQS.f.frequency.setTargetAtTime(350 + 500 * k, t, 0.04); }
+  function planeSound(k) { if (NA) return nCont('plane', 'bandpass', 1.4, k > 0 ? 0.06 + 0.34 * k : 0, 2200 + 3200 * k, 0.02, 0.03); PLS = contNoise(PLS, 'bandpass', 3000, 1.4); if (!PLS) return; var t = AC.currentTime; PLS.g.gain.setTargetAtTime(k > 0 ? 0.06 + 0.34 * k : 0, t, 0.02); PLS.f.frequency.setTargetAtTime(2200 + 3200 * k, t, 0.03); }
   var CUTS = null;
   function cutSound(v) {                               // v = 指の速さ(px/s)。0 で止める
+    if (NA) { var kk = clamp(v / 1400, 0, 1); return nCont('cut', 'bandpass', 1.6, v > 0 ? 0.05 + 0.3 * kk : 0, 1400 + 2600 * kk, 0.025, 0.03); }
     if (!AC || AC.state !== 'running') return;
     if (!CUTS) { var src = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain(); src.buffer = noiseBuf; src.loop = true; f.type = 'bandpass'; f.Q.value = 1.6; g.gain.value = 0; src.connect(f); f.connect(g); g.connect(sfx); src.start(); CUTS = { f: f, g: g }; }
     var k = clamp(v / 1400, 0, 1), t = AC.currentTime;
@@ -335,12 +360,34 @@
   }
   function voice(k) {
     soundLog.push('voice:' + k); if (soundLog.length > 800) soundLog.shift();
+    if (NA) { if (NAon) na({ type: 'voice', key: k }); return; }
     if (!AC || AC.state !== 'running' || !VOICE[k]) return;
     try { if (voiceSrc) voiceSrc.stop(); } catch (e) {}
     try { var s = AC.createBufferSource(), g = AC.createGain(); g.gain.value = 1.1; s.buffer = VOICE[k]; s.connect(g); g.connect(sfx); s.start(AC.currentTime + 0.02); voiceSrc = s; } catch (e) {}
   }
+  // アプリ用に 音を 焼く(tools/render_audio.mjs から。ページの 音は 鳴らさない)。AC / sfx / bgmBus を 一時的に OfflineAudioContext へ 差し替えて、
+  // いつもの SND / bgmStepAt を そのまま 呼ぶ = 音の 作り方は ここ 1 か所のまま
+  function renderWith(sr, frames, busGain, fn) {
+    var ctx = new OfflineAudioContext(1, frames, sr), g = ctx.createGain(), save = [AC, sfx, bgmBus, noiseBuf, BGM.pluck];
+    g.gain.value = busGain; g.connect(ctx.destination);
+    var nb = ctx.createBuffer(1, sr, sr), d = nb.getChannelData(0); for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    AC = ctx; sfx = g; bgmBus = g; noiseBuf = nb; BGM.pluck = {};
+    try { fn(ctx); } finally { AC = save[0]; sfx = save[1]; bgmBus = save[2]; noiseBuf = save[3]; BGM.pluck = save[4]; }
+    return ctx.startRendering().then(function (b) { return b.getChannelData(0); });
+  }
+  var RENDER = {
+    sfxNames: Object.keys(SND), songs: Object.keys(SONGS),
+    sfx: function (name, sr, sec) { return renderWith(sr, Math.round(sr * (sec || 4)), 1, function () { SND[name](0.002); }); },
+    // 1 巡(loop 拍)を 2 回 鳴らして 2 回目を 取る = 1 回目の 余韻が 頭に 入って 継ぎ目なく 回る。拍の 長さは フレームに 丸める
+    bgm: function (song, tempo, parts, loop, sr) {
+      var S = SONGS[song], sf = Math.round(60 / (S.bpm * tempo) / 2 * sr), e8 = sf / sr;
+      return renderWith(sr, sf * loop * 2 + sr * 3, 0.2, function () { for (var s = 0; s < loop * 2; s++) bgmStepAt(S, s % 64, s * e8 + 1e-4, e8, parts); })
+        .then(function (d) { return { stepFrames: sf, data: d.slice(sf * loop, sf * loop * 2) }; });
+    }
+  };
   function play(name) {
     soundLog.push(name); if (soundLog.length > 800) soundLog.shift();
+    if (NA) { if (NAon) na({ type: 'sfx', name: name }); return; }
     if (!AC || AC.state !== 'running') return;
     try { SND[name](AC.currentTime + 0.005); } catch (e) {}
   }
@@ -902,6 +949,7 @@
     else if (st === 'BOIL' || (st === 'RESULT' && boil)) drawBoil(tn, dt); else drawBench(tn, dt);
     if (st === 'RESULT') { var g = fx.createLinearGradient(0, H * 0.35, 0, H); g.addColorStop(0, 'rgba(20,6,2,0)'); g.addColorStop(1, 'rgba(20,6,2,.55)'); fx.fillStyle = g; fx.fillRect(0, H * 0.35, W, H * 0.65); }
     bgmDuck(st === 'PLAY' && game && game.phase === 'drill' ? 0.4 : 1);
+    if (NA) naBgm();
   }
 
   function drawBench(tn, dt) {
@@ -1115,7 +1163,8 @@
       var bc = D.id === 'yaki' ? (lp > 0.5 ? '#f2c14e' : lp > 0.2 ? '#d9822b' : '#7a3b12') : (lp > 0.3 ? '#f6e7c8' : RED); c.fillStyle = bc; rr(c, bx2, by2, Math.max(16, bw2 * lp), 24, 12); c.fill();
       c.font = '900 30px ' + FONT_UI; c.textAlign = 'center'; c.fillStyle = '#fff'; c.fillText(D.id === 'yaki' ? T('焼き色', 'Browning') : T('回転台', 'Turntable'), 540, by2 + 62);
     }
-    if (D.id === 'yaki') { SZS = contNoise(SZS, 'highpass', 2600, 0.7); if (SZS) SZS.g.gain.setTargetAtTime(st === 'PLAY' ? 0.035 : 0, AC.currentTime, 0.1); }   // じゅう(焼ける音)
+    if (D.id === 'yaki' && NA) nCont('sizzle', 'highpass', 0.7, st === 'PLAY' ? 0.035 : 0, 2600, 0.1, 0.1);
+    else if (D.id === 'yaki') { SZS = contNoise(SZS, 'highpass', 2600, 0.7); if (SZS) SZS.g.gain.setTargetAtTime(st === 'PLAY' ? 0.035 : 0, AC.currentTime, 0.1); }   // じゅう(焼ける音)
     // ドリルの速さの札: 低速 / 高速 ×1.5(30 秒で 店が開くと 変わる。回している途中なら「次から高速」)
     var hiNow = game.gear() > 1, curHi = game.phase === 'drill' ? game.g0 > 1 : hiNow, pend = hiNow && !curHi;
     // 11-27 12 回目(ユウキさん「高速っていう文字が合ってない」): 日本語は 「低」「高」「速」を 看板の 筆の字(白)で、「×1.5」「次から」は 画面の ゴシック
@@ -1799,11 +1848,11 @@
   // 検査用の のぞき窓
   window.__gz = {
     get state() { return st; }, get game() { return game; }, get T0() { return T0; }, get endKind() { return endKind; }, get boil() { return boil; },
-    get audio() { return AC ? { state: AC.state, rate: AC.sampleRate } : null; }, get drillSnd() { return drillSnd; },
+    get audio() { return NA ? { state: NAon ? 'native' : 'native-idle', rate: 0 } : AC ? { state: AC.state, rate: AC.sampleRate } : null; }, get drillSnd() { return drillSnd; },
     get settings() { return SET; }, get S() { return S; }, set S(v) { S = v; }, get mini() { return mini; }, cutY: function () { return cutY(); }, smashC: function () { return smashC(); }, sawLine: function () { return sawLine(mini); }, get prog() { return PROG; }, openCard: openCard, boardOpen: boardOpen, toTitle: toTitle,
     tap: function (x, y) { miniDown(now(), { x: x, y: y }); }, kDown: function (id, x, y, mouse) { kannaDown(now(), id, { x: x, y: y }, !!mouse); }, kMove: function (id, x, y) { kannaMove(now(), id, { x: x, y: y }); }, kUp: function (id) { kannaUp(now(), id); }, crankC: function () { return crankC(); }, caulkC: function () { return caulkC(); }, move: function (x, y) { miniMove(now(), { x: x, y: y }); }, lift: function (x, y) { miniUp(now(), { x: x, y: y }); }, get bgm() { return { song: BGM.song, step: BGM.step, on: BGM.on, step: BGM.step, layer: BGM.layer, tempo: BGM.tempo, gain: bgmBus ? bgmBus.gain.value : null, sfxGain: sfx ? sfx.gain.value : null }; }, setOpen: setOpen,
     grade: function (g, x, y, why) { grade(g, x, y, why); }, get shop() { return SHOP; }, get run() { return run; }, shopOpen: function (on) { shopOpen(on); }, buy: function (i) { buy(SHOPI[i]); }, get PREP() { return PREP; }, prepNext: function () { prepNext(); }, get STG() { return STG; }, cutOff: CUTOFF, cutEnds: function (L) { return cutEnds(L); },   // 判定の札だけ 出す(見た目の検査用)
-    soundLog: soundLog, hapticLog: hapticLog, clockIn: clockIn, press: function () { press(now()); }, release: function () { release(now()); },
+    render: RENDER, soundLog: soundLog, hapticLog: hapticLog, clockIn: clockIn, press: function () { press(now()); }, release: function () { release(now()); },
     setFake: function (t) { fake = t; lastT = t == null ? performance.now() : t; }, get fake() { return fake; },
     step: function (ms, each) { each = each || 16; for (var e = 0; e < ms - 1e-6; e += each) { fake += Math.min(each, ms - e); frame(fake); } },
     peak: function () { if (!analyser) return 0; var d = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(d); var m = 0; for (var i = 0; i < d.length; i++) m = Math.max(m, Math.abs(d[i])); return m; },
