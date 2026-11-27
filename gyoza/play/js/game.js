@@ -82,6 +82,7 @@
     if (g === 'tear') {
       c.result = 'torn'; this.tears++; out.push({ type: 'dumpling', t: t, result: 'torn', d: c });
       if (this.tears >= this.TEARS) return this._end('fired', t, out);
+      if (this.cfg.pieces && this.done.length + this.tears >= this.cfg.pieces) return this._end('clear', t, out);   // 11-27(16 回目)バカバカしい版: 決めた数を 打ったら おしまい(失敗も 数える)
       if (this.cfg.oneShot) return this._end('shot', t, out);
       this.phase = 'swap'; this.readyT = t + TEAR_MS; return;
     }
@@ -92,6 +93,7 @@
       this.closed += bonus; this.gold = (this.gold || 0) + bonus;
       this.done.push(c); out.push({ type: 'dumpling', t: t, result: c.result, d: c, bonus: bonus });
       if (this.cfg.oneShot) return this._end(c.result === 'closed' ? 'clear' : 'shot', t, out);   // 大将の 投げ餃子 = 一発
+      if (this.cfg.pieces && this.done.length + this.tears >= this.cfg.pieces) return this._end('clear', t, out);
       this.phase = 'swap'; this.readyT = t + (this.cfg.swap || SWAP_MS); return;
     }
     c.i++; this.phase = 'hop'; this.readyT = t + (this.cfg.hop || HOP_MS);
@@ -108,7 +110,7 @@
   Game.prototype.advance = function (t, out) {
     out = out || [];
     for (var guard = 0; guard < 1000 && !this.over; guard++) {
-      if (this.firstT == null) { if (t >= IDLE_MS) this._end('idle', IDLE_MS, out); break; }
+      if (this.firstT == null) { if (t >= IDLE_MS && !this.cfg.noIdle) this._end('idle', IDLE_MS, out); break; }
       // つぎに起きること(早い順): 店長の合図 / ラッシュ終わり / 破れる / 次の準備
       var ev = null, et = Infinity, ns = this.stage + 1;
       if (ns < this.P.length && this.firstT + this.P[ns].from < et) { ev = 'stage'; et = this.firstT + this.P[ns].from; }

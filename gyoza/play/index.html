@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#2c160e">
 <link rel="icon" href="data:,">
-<meta name="description" content="ドリル飯店: 町中華の見習いが 工具で料理を仕上げていく。電動ドリルで餃子にネジ、ホッチキスで春巻、カッターと金尺で細切り。合格するたびに 工具が増えて 肩書きが上がる。ブラウザでそのまま遊べる無料のゲーム。">
+<meta name="description" content="ドリル飯店: 真顔の大将は 何でも「ネジで留めとけ」。電動ドリルで 餃子を閉め、皿に留め、椅子を作り、最後は 店ごと 餃子で留める。失敗すると 餃子がプロペラになって飛ぶ。ブラウザでそのまま遊べる無料のゲーム。">
 <title>ドリル飯店</title>
 <style>
 /* 字(すべて SIL OFL 1.1。fonts/LICENSE_*.txt):
@@ -165,6 +165,11 @@ html[lang=en] .panel h2{letter-spacing:.04em}
 .seg button:active{box-shadow:inset 0 0 0 calc(var(--u)*3) rgba(200,36,27,.45)}
 .seg button[aria-pressed="true"]{background:var(--red);color:#fff;font-weight:900;box-shadow:none}
 #s-close{display:block;margin:calc(var(--u)*36) auto 0;min-width:calc(var(--u)*360)}
+/* 16 回目: 事件の 字幕は 下に(上は 人物の 顔)/ 事件簿の 回数 / 空の行は 出さない */
+#boss.low{top:auto;bottom:calc(var(--u)*150 + env(safe-area-inset-bottom))}
+.prow .pc{flex:none;font-weight:900;font-size:calc(var(--u)*44);color:var(--red);min-width:calc(var(--u)*90);text-align:right}
+#c-tool:empty,#c-how:empty,#c-goal:empty,#r-big:empty,#r-label:empty{display:none}
+#rank[hidden]{display:none}
 @media (prefers-reduced-motion:reduce){#title,#boss,#result .board>*,#r-btns,.panel,#set,#card,#card .board,#board{transition-duration:1ms}}
 </style>
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7875457474969202" crossorigin="anonymous"></script>
