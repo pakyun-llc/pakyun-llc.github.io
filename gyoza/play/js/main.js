@@ -285,7 +285,7 @@
   function setMode() { FRONT = SET.mode !== 'side'; DRL = FRONT ? DRL_F : DRL_S; DS = DRL.ds; }
   setMode();
   var BGI = { w: 1188, h: 2112, cx: 600 };                                    // 店の写真(shop / shop_pot は同じ構図)。cx = 画面の真ん中に来る x
-  var POTW = { cx: 600, cy: 1300, rx: 285, ry: 158 };                          // 11-27: kitchen_pot の 湯の面(前は shop_pot の 607, 1313, 348, 150)
+  var POTW = { cx: 608, cy: 960, rx: 430, ry: 178 };                           // 11-27: kitchen_pot(= cn_stove_pot。火の上の大鍋)の 湯の面(前は 台の上の鍋 600, 1300 / 客席の shop_pot 607, 1313)
   var PLATE = { cx: 600, cy: 1310, rx: 300, ry: 226 };                         // 11-27: 一品目も 厨房へ = kitchen の 大皿(前は 客席 shop の 618, 1367, 361, 234)
   function rnd(seed) { return G.rng(seed); }
   function bake(im, sc, blur, oy) {                 // 影つきで 先に焼いておく(毎コマ影を計算しない)
@@ -446,7 +446,7 @@
     { kind: 'drill', bg: 'kitchen', no: ['一品目', 'Order 1'], dish: ['ネジ水餃子', 'Screwed Dumplings'], tool: ['電動ドリル', 'Power drill'], take: ['ドリルを持つ', 'Grab the drill'],
       who: ['大将', 'Chef'], line: ['お前の包んだのは 茹でたら開く。ネジで 閉めとけ', 'Yours pop open in the pot. Screw them shut.'], voice: 'open',
       how: ['長押しで ネジを締める。頭が皮に沈んだら 離す', 'Hold to drive the screw. Let go when the head sinks in.'],
-      goal: ['茹でても開かない餃子', 'Dumplings that survive the pot'], unit: ['コ', ''], quota: 5, best: ['最高 ', 'Best '] },
+      goal: ['茹で上がり(開かない餃子)', 'Cooked (did not burst)'], unit: ['コ', ''], quota: 5, best: ['最高 ', 'Best '] },
     { kind: 'smash', bg: 'kitchen', no: ['二品目', 'Order 2'], dish: ['叩ききゅうり', 'Smashed Cucumber'], tool: ['金づち', 'Hammer'], take: ['金づちを持つ', 'Grab the hammer'],
       who: ['大将', 'Chef'], line: ['まかないの 前菜は 叩ききゅうりや。金づちで ひびを 入れろ', 'Staff meal starter: smashed cucumber. Crack it with a hammer.'],
       how: ['赤い印を 一回ずつ 叩く。同じ所を 二回 叩くと つぶれる', 'Tap each red mark once. Hit the same spot twice and it turns to mush.'],
@@ -581,7 +581,7 @@
     staple: [['春巻の神', 'Spring Roll God'], ['留め職人', 'Staple Master']], cut: [['細切りの神', 'Knife God'], ['金尺の鬼', 'Ruler Demon']], caulk: [['焼売の神', 'Shumai God'], ['絞りの名人', 'Piping Master']],
     kanna: [['かんなの神', 'Plane God'], ['宮大工', 'Temple Carpenter']], saw: [['骨切りの神', 'Bone-Saw God'], ['大工の棟梁', 'Master Carpenter']], crank: [['麺の神', 'Noodle God'], ['巻きの名人', 'Twist Master']] };
   function crit(k, ri) { return ri < 2 ? CRIT[k][ri] : ri === 2 ? ['合格', 'Passed'] : ['ぎりぎり', 'Just made it']; }
-  var LABEL = { drill: ['茹でても 開かなかった', 'Stayed shut in the pot'], smash: ['ひびが 入った', 'Cracked just right'], staple: ['3 か所 留まった', 'Stapled three times'], cut: ['まっすぐ 切れた', 'Cut dead straight'],
+  var LABEL = { drill: ['茹で上がり', 'Cooked'], smash: ['ひびが 入った', 'Cracked just right'], staple: ['3 か所 留まった', 'Stapled three times'], cut: ['まっすぐ 切れた', 'Cut dead straight'],
     caulk: ['花の形に 絞れた', 'Piped into flowers'], kanna: ['薄く 削げた', 'Shaved thin'], saw: ['骨ごと 切れた', 'Cut through the bone'], crank: ['ひと口に 巻けた', 'Twisted into bites'] };
   var CHEF = [['大将「明日から お前が包め」', 'Chef: "You\'re wrapping from tomorrow."'], ['大将「やるやないか」', 'Chef: "Not bad."'], ['大将「まあ 出せる」', 'Chef: "Good enough to serve."'], ['大将「ぎりぎりやな」', 'Chef: "Barely."']];
   var shareText = '', promoFrom = -1;
@@ -590,7 +590,7 @@
     st = 'RESULT'; nativeScreen('result'); bgmLayer(0); hintEl.classList.remove('on');
     var D = STG[S], k = endKind, big = $('r-big'), rk = $('r-rank'), u = JA ? '<small>' + D.unit[0] + '</small>' : '', c, stat, L;
     big.className = ''; promoFrom = -1; $('r-promo').textContent = '';
-    if (D.kind === 'drill') { c = game.closed; stat = [T('分速 ' + game.perMin() + ' コ', game.perMin() + '/min'), T('ぴたっ ' + game.flush() + '%', 'Flush ' + game.flush() + '%'), T('開いた ' + game.opened + ' コ', 'Opened ' + game.opened)]; }
+    if (D.kind === 'drill') { c = game.closed; stat = [T('分速 ' + game.perMin() + ' コ', game.perMin() + '/min'), T('ぴたっ ' + game.flush() + '%', 'Flush ' + game.flush() + '%'), T('開いた ' + game.opened + ' コ', 'Burst ' + game.opened)]; }
     else if (D.kind === 'staple') { c = mini.g.closed; stat = [T('ぴたっ ' + mini.g.flush() + '%', 'Dead-on ' + mini.g.flush() + '%'), T('はみ出た ' + mini.g.spoiled + ' 本', 'Burst ' + mini.g.spoiled)]; }
     else if (D.kind === 'cut') { c = mini.g.cuts; stat = [T('ぴたっ ' + mini.g.flush() + '%', 'Dead-straight ' + mini.g.flush() + '%'), T('失敗 ' + mini.g.bad + ' 本', 'Ruined ' + mini.g.bad)]; }
     else if (D.kind === 'smash') { c = mini.g.done; stat = [T('ぴたっ ' + mini.g.flush() + '%', 'Dead-on ' + mini.g.flush() + '%'), T('つぶした ' + mini.g.ruined + ' 本', 'Mushed ' + mini.g.ruined)]; }
@@ -877,11 +877,14 @@
       g = c.createRadialGradient(sxp, syp, 0, sxp, syp, sr); g.addColorStop(0, 'rgba(255,255,255,' + 0.2 * Math.sin(sp * Math.PI) + ')'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(sxp - sr, syp - sr, sr * 2, sr * 2); }
     drawPops(c, tn);
     if (st === 'BOIL') {                              // 数え上げ
-      var yy = Math.round(H * 0.2), lab = T('開かなかった', 'Stayed shut'), num = String(b.shut + (t > 600 ? b.extraShut : 0));   // 漆の札(壁の品書きの前)
-      c.save(); c.shadowColor = 'rgba(20,4,0,.45)'; c.shadowBlur = 24; c.shadowOffsetY = 10; c.fillStyle = PAPER; rr(c, 330, yy - 250, 420, 300, 6); c.fill(); c.restore();
-      c.fillStyle = RED; c.fillRect(330, yy - 250, 420, 14);
-      c.textAlign = 'center'; c.textBaseline = 'alphabetic'; c.font = '700 46px ' + FONT_UI; c.fillStyle = INK; c.fillText(lab, 540, yy - 172);
-      c.font = '900 168px ' + FONT_UI; c.fillStyle = RED; c.fillText(num, 540, yy + 2);
+      // 数え上げの札(11-27: 「開かなかった」が 分かりにくい → 茹で上がり ◯コ + 小さく 開いた ◯コ)
+      var yy = Math.round(H * 0.2), num = String(b.shut + (t > 600 ? b.extraShut : 0));
+      c.save(); c.shadowColor = 'rgba(20,4,0,.45)'; c.shadowBlur = 24; c.shadowOffsetY = 10; c.fillStyle = PAPER; rr(c, 310, yy - 250, 460, 350, 6); c.fill(); c.restore();
+      c.fillStyle = RED; c.fillRect(310, yy - 250, 460, 14);
+      c.textAlign = 'center'; c.textBaseline = 'alphabetic'; c.font = '700 46px ' + FONT_UI; c.fillStyle = INK; c.fillText(T('茹で上がり', 'Cooked'), 540, yy - 172);
+      c.font = '900 168px ' + FONT_UI; var nw = c.measureText(num).width; c.fillStyle = RED; c.fillText(num, 540 - (JA ? 22 : 0), yy + 2);
+      if (JA) { c.font = '700 54px ' + FONT_UI; c.fillStyle = INK; c.textAlign = 'left'; c.fillText('コ', 540 - 22 + nw / 2 + 6, yy + 2); c.textAlign = 'center'; }
+      c.font = '700 38px ' + FONT_UI; c.fillStyle = 'rgba(35,26,20,.7)'; c.fillText(T('開いた ' + b.opened + ' コ', 'Burst ' + b.opened), 540, yy + 70);
     }
   }
 
