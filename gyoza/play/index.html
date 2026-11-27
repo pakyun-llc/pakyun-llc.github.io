@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#2c160e">
 <link rel="icon" href="data:,">
-<meta name="description" content="開店前の町中華。見習いが 45 秒で、餃子のとじ目に電動ドリルでネジを打って閉める。茹でても開かなかった数だけが今日の品書きに載る。ブラウザでそのまま遊べる無料のゲーム。">
-<title>餃子とドリル</title>
+<meta name="description" content="ドリル飯店: 町中華の見習いが 工具で料理を仕上げていく。電動ドリルで餃子にネジ、ホッチキスで春巻、カッターと金尺で細切り。合格するたびに 工具が増えて 肩書きが上がる。ブラウザでそのまま遊べる無料のゲーム。">
+<title>ドリル飯店</title>
 <style>
 /* 字(すべて SIL OFL 1.1。fonts/LICENSE_*.txt):
    看板・ぴたっ = Potta One(町中華の手描き看板の 丸い筆)/ 画面の字 = Zen Kaku Gothic New(品書きの太いゴシック)/ 壁の短冊だけ = Yuji Syuku(canvas) */
@@ -28,9 +28,9 @@ body{font-family:var(--ui);font-weight:500;color:var(--ink);-webkit-user-select:
 /* 題名 = 店の看板: 赤い板に 白の手描き文字。板の内側に 白の線 1 本 */
 #title{top:calc(var(--u)*120 + env(safe-area-inset-top));transition:opacity 200ms var(--ease-out),transform 200ms var(--ease-out)}
 .sign{position:relative;display:table;margin:0 auto;line-height:0}
-/* 題名 = 香港の 金漆招牌(黒漆の板に 金箔の 筆の字)。絵 = assets/sign.webp(Grok で 下書きの看板を描き直したもの)。板を 店の壁に掛ける影だけ足す */
+/* 題名 = 「ドリル飯店」の 香港風の看板(黒漆の板に 金の 筆の字・かすれ)。絵 = assets/sign.webp(Grok で 下書きの看板を描き直したもの)。板を 店の壁に掛ける影だけ足す */
 #title h1{margin:0;font-size:0;line-height:0}
-#title h1 img{display:block;width:calc(var(--u)*820);height:auto;border-radius:calc(var(--u)*3);transform:rotate(-0.8deg);box-shadow:0 calc(var(--u)*3) calc(var(--u)*3) rgba(0,0,0,.55),calc(var(--u)*6) calc(var(--u)*12) calc(var(--u)*14) rgba(0,0,0,.3)}   /* 壁の梁と同じ 少し右上がり。影は 壁に接した 細い影 + 右下へ 短く(Codex) */
+#title h1 img{display:block;width:calc(var(--u)*900);height:auto;border-radius:calc(var(--u)*3);transform:rotate(-0.8deg);box-shadow:0 calc(var(--u)*3) calc(var(--u)*3) rgba(0,0,0,.55),calc(var(--u)*6) calc(var(--u)*12) calc(var(--u)*14) rgba(0,0,0,.3)}   /* 壁の梁と同じ 少し右上がり。影は 壁に接した 細い影 + 右下へ 短く(Codex) */
 #title .en-name{display:none;margin-top:calc(var(--u)*12);font-weight:900;font-size:calc(var(--u)*64);letter-spacing:.02em;color:#fff;text-shadow:0 calc(var(--u)*3) calc(var(--u)*8) rgba(20,4,0,.9)}
 #title.en .en-name{display:block}
 #title.en #rank{margin-top:calc(var(--u)*36)}
@@ -159,7 +159,7 @@ html[lang=en] .panel h2{letter-spacing:.04em}
 <body>
 <div id="stage">
   <canvas id="bg"></canvas><canvas id="fx"></canvas>
-  <div id="title" class="txt"><div class="sign"><h1><img src="assets/sign.webp" alt="餃子とドリル" width="960" height="720"></h1></div><div class="en-name">Dumplings &amp; Drill</div><button id="rank" type="button"><span class="lv"></span><span class="nm"></span><span class="go"></span></button><p></p></div>
+  <div id="title" class="txt"><div class="sign"><h1><img src="assets/sign.webp" alt="ドリル飯店" width="1400" height="557"></h1></div><div class="en-name">Drill Diner</div><button id="rank" type="button"><span class="lv"></span><span class="nm"></span><span class="go"></span></button><p></p></div>
   <div id="boss" class="txt"><span><b></b><i></i></span></div>
   <div id="hint" class="txt"><span></span></div>
   <div id="start"><button id="b-in" class="main"></button><div class="subs"><button id="b-board" class="sub"></button><button id="b-set" class="sub"></button></div></div>

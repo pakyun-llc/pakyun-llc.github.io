@@ -1,4 +1,4 @@
-// 餃子とドリル: 画面・さわり心地・音・ふるえ・進行。遊びの式は game.js。
+// ドリル飯店(旧 餃子とドリル): 画面・さわり心地・音・ふるえ・進行。遊びの式は game.js。
 // 絵は 生成写真(v3 = 正面打ち: 素手で持った餃子 3 種・真正面のネジの頭・自分の腕ごしのドリル・明るい机 + 皿・カセットコンロの鍋。皿と鍋の小さい餃子は v1 の真上からの絵)。前の版(v2 = 右上から斜めに打つ)は git の tag v2 と pakyun.net/gyoza/v2/。
 // コードで描いているのは くぼみの影・粉・飛ぶ具・泡・湯気・回転の筋・腕の延長だけ。
 (function () {
@@ -14,7 +14,7 @@
   var JA = LANG.toLowerCase().indexOf('ja') === 0;
   function T(ja, en) { return JA ? ja : en; }
   document.documentElement.lang = JA ? 'ja' : 'en';
-  document.title = T('餃子とドリル', 'Dumplings & Drill');
+  document.title = T('ドリル飯店', 'Drill Diner');
 
   // ---- 舞台(幅 1080 の座標。高さは画面の縦横比で決まる)----
   var W = 1080, H = 1920, U = 1, DPR = 1;
@@ -558,7 +558,7 @@
         $('r-promo').textContent = T('昇格 ' + LV[promoFrom][0] + ' → ' + LV[promoFrom + 1][0], 'Promoted: ' + LV[promoFrom][1] + ' → ' + LV[promoFrom + 1][1]);
       }
       saveProg();
-      shareText = T('餃子とドリル: ' + D.tool[0] + 'で「' + D.dish[0] + '」' + c + ' ' + D.unit[0] + '。肩書きは「' + LV[lvNow()][0] + '」', 'Dumplings & Drill: ' + c + ' × ' + D.dish[1] + ' with a ' + D.tool[1].toLowerCase() + '. Rank: ' + LV[lvNow()][1]);
+      shareText = T('ドリル飯店: ' + D.tool[0] + 'で「' + D.dish[0] + '」' + c + ' ' + D.unit[0] + '。肩書きは「' + LV[lvNow()][0] + '」', 'Drill Diner: ' + c + ' × ' + D.dish[1] + ' with a ' + D.tool[1].toLowerCase() + '. Rank: ' + LV[lvNow()][1]);
     } else {
       // [品書きに載った物, 説明, 大きい字, 大きい字が言葉か, 一言の所, 一言]
       var ko = u;
@@ -568,7 +568,7 @@
         idle: [T('品切れ', 'Sold Out'), T(D.tool[0] + 'を持って 立っていた', 'Stood there holding a ' + D.tool[1].toLowerCase()), '…', true, '', T('大将「…何しとんねん」', 'Chef: "...What are you doing?"')] }[k];
       $('r-dish').textContent = L[0]; $('r-label').textContent = L[1]; big.innerHTML = L[2]; if (L[3]) big.className = 'word';
       rk.textContent = L[4]; $('r-line').textContent = L[5]; voice(k); setStat(k === 'idle' ? [] : stat); play('over'); haptic('bad');
-      shareText = T('餃子とドリル: 本日の品書き「' + L[0] + '」' + L[1] + '。' + splitSay(L[5])[1], 'Dumplings & Drill: Today\'s menu: ' + L[0] + '. ' + splitSay(L[5])[1]);
+      shareText = T('ドリル飯店: 本日の品書き「' + L[0] + '」' + L[1] + '。' + splitSay(L[5])[1], 'Drill Diner: Today\'s menu: ' + L[0] + '. ' + splitSay(L[5])[1]);
     }
     // ボタン: 合格 = 次の注文へ(大きい)+ もう一回 / 不合格 = もう一回(大きい)
     var ok = k === 'clear', nb = $('b-next'), ab = $('b-again');
@@ -1139,11 +1139,11 @@
   function loop() { frame(now()); requestAnimationFrame(loop); }
   window.addEventListener('resize', layout);
   Promise.all(['shop', 'shop_pot', 'kitchen', 'dumpling', 'dumpling_open', 'hand', 'hand_thin', 'hand_torn', 'head', 'drill', 'screw', 'drill_side', 'hand_stapler', 'hand_cutter'].map(function (n) { return load(n, 'assets/' + n + '.webp'); }).concat(document.fonts ? [
-      document.fonts.load('40px "Potta"', '餃子とドリルぴたっDumplings&Drill').catch(function () {}), document.fonts.load('40px "YujiSyuku"', '餃子麻婆豆腐').catch(function () {}),
+      document.fonts.load('40px "Potta"', 'ドリル飯店ぴたっDrillDiner').catch(function () {}), document.fonts.load('40px "YujiSyuku"', '餃子麻婆豆腐').catch(function () {}),
       Promise.all(['500', '700', '900'].map(function (w) { return document.fonts.load(w + ' 40px "ZenKaku"', '餃子0123Aa'); })).catch(function () {})] : [])).then(function () {
     ['hand', 'hand_thin', 'hand_torn'].forEach(function (n) { spr[n] = bake(img[n], HS, 34, 30); }); spr.drill = bake(img.drill, DRL_F.ds, 30, 34); spr.drill_side = bake(img.drill_side, DRL_S.ds, 30, 34);
     ready = true; layout(); lastT = now();
-    titleEl.querySelector('h1 img').alt = T('餃子とドリル', 'Dumplings & Drill');   // 題字 = 看板の絵(香港の金漆招牌。英語でも 看板は日本語のまま、下に 英語の名前)
+    titleEl.querySelector('h1 img').alt = T('ドリル飯店', 'Drill Diner');   // 題字 = 看板の絵(香港の金漆招牌。英語でも 看板は日本語のまま、下に 英語の名前)
     if (!JA) titleEl.classList.add('en');
     buildSettings(); toTitle(); requestAnimationFrame(loop);
     if (Q.get('stage')) S = +Q.get('stage') - 1;          // 検査用: ?stage=N で その面の伝票から
