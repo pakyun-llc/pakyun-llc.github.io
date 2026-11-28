@@ -551,8 +551,9 @@
   // 段 = 優(いちばん)/ 良 / 可(ゆるい・それた = 使えるが 甘い)/ 不可(破れ・空振り = 駄目)。漢字 1〜2 字を 判で押すように 出し、下に 英語の 一語。優・良が 続くと 連の数
   var GR = { H: ['高速', 'HIGH SPEED', RED, '#f3c64b'], S: ['優', 'EXCELLENT', RED, '#f3c64b'], A: ['良', 'GOOD', '#c8611a', PAPER], B: ['可', 'SO-SO', '#857b72', PAPER], F: ['不可', 'MISS', '#4f4943', PAPER] }, combo = 0;
   // 11-27(14 回目)コンボの 意味(ユウキさん「コンボしたとて 数だけ」)= 熱。5 連 = 火花 + BGM 1 段 / 10 連 = 熱々(チップ 2 倍・大将の一言)/ 20 連 = 神ドリル(チップ 3 倍・金ネジが 出やすい)。可・不可で 冷める。判定の 幅は 変えない
-  var SHOP_KEY = 'gyoza.shop.v1', SHOP = { chips: 0, color: 0, motor: 0, look: 0, goldNext: 0 };
+  var SHOP_KEY = 'gyoza.shop.v1', SHOP = { chips: 0, color: 0, motor: 0, look: 0, goldNext: 0, colorOwn: 0, motorOwn: 0, lookOwn: 0 };
   try { var sv0 = JSON.parse(localStorage.getItem(SHOP_KEY) || 'null'); if (sv0) for (var sk0 in SHOP) if (sv0[sk0] != null) SHOP[sk0] = +sv0[sk0] || 0; } catch (e) {}
+  ['color', 'motor', 'look'].forEach(function (k) { SHOP[k + 'Own'] = Math.max(SHOP[k + 'Own'] || 0, SHOP[k] || 0); });   // 買った段(Own)と 使っている段(color など)を 分けた = 元に 戻せる
   function saveShop() { try { localStorage.setItem(SHOP_KEY, JSON.stringify(SHOP)); } catch (e) {} }
   var run = { chips: 0, heat: 0, maxCombo: 0, gold: 0, usedGold: false }, heatT = -1e9, coolT = -1e9, sparks = [];
   var HEATM = [1, 1.5, 2, 3];
@@ -1001,7 +1002,7 @@
     { k: 'gold', max: 99, price: [60], name: ['金ネジ 2 倍', 'Gold screws ×2'], tier: [['次の 1 面', 'Next order']], desc: ['次に 遊ぶ ドリルの面で 金ネジが 2 倍', 'Double gold screws in your next drill order'] }
   ];
   function openTarget() { var nx = nextStage(); return nx < 0 || nx + 1 >= STG.length ? -1 : nx + 1; }   // 次の注文の さらに 次
-  function shopLevel(it) { if (it.k === 'open') { var tg = openTarget(); return tg < 0 || PROG.open[tg] || PROG.clear[tg] ? 1 : 0; } if (it.k === 'gold') return 0; return SHOP[it.k] || 0; }
+  function shopLevel(it) { if (it.k === 'open') { var tg = openTarget(); return tg < 0 || PROG.open[tg] || PROG.clear[tg] ? 1 : 0; } if (it.k === 'gold') return 0; return SHOP[it.k + 'Own'] != null ? SHOP[it.k + 'Own'] : SHOP[it.k] || 0; }
   function shopOpen(on) {
     if (!on) { shopEl.classList.remove('on'); if (st === 'TITLE') { fillTitle(); drawBg(); } return; }
     audioOn(); haptic('ui'); shopEl.classList.add('on'); shopText(); $('p-close').focus({ preventScroll: true });
@@ -1025,8 +1026,8 @@
     SHOP.chips -= price;
     if (it.k === 'open') { var tg = openTarget(); if (tg >= 0) { PROG.open[tg] = true; saveProg(); } }
     else if (it.k === 'gold') SHOP.goldNext++;
-    else SHOP[it.k] = lv + 1;
-    saveShop(); if (it.k === 'color') rebakeDrill(); play('promo'); haptic('promo'); shopText(); if (it.k === 'look') drawBg();
+    else { SHOP[it.k + 'Own'] = lv + 1; SHOP[it.k] = lv + 1; }
+    saveShop(); buildSettings(); if (it.k === 'color') rebakeDrill(); play('promo'); haptic('promo'); shopText(); if (it.k === 'look') drawBg();
   }
   $('b-shop').addEventListener('click', function () { haptic('ui'); STORY.at = 0; saveStory(); openCard(0); });     // 16 回目: 店 → 最初から
   $('p-close').addEventListener('click', function () { haptic('ui'); bookOpen(false); });
@@ -1057,7 +1058,28 @@
       row.appendChild(lab); row.appendChild(seg); if (cap) row.appendChild(cap); box.appendChild(row);
       if (cap) capText(R, cap);
     });
+    // 買った物の 切り替え(元にも 戻せる)。買った物が ある行だけ 出す
+    OWNR.forEach(function (R) {
+      var own = SHOP[R.k + 'Own'] || 0; if (!own) return;
+      var row = document.createElement('div'), lab = document.createElement('span'), seg = document.createElement('div');
+      row.className = 'row'; row.setAttribute('role', 'group'); lab.className = 'lab'; lab.textContent = T(R.lab[0], R.lab[1]); seg.className = 'seg';
+      R.opts.slice(0, own + 1).forEach(function (o, i) {
+        var b = document.createElement('button'); b.type = 'button'; b.textContent = T(o[0], o[1]); b.setAttribute('aria-pressed', String((SHOP[R.k] || 0) === i));
+        b.addEventListener('click', function () {
+          audioOn(); haptic('ui'); if ((SHOP[R.k] || 0) === i) return; SHOP[R.k] = i; saveShop();
+          [].forEach.call(seg.children, function (c, j) { c.setAttribute('aria-pressed', String(j === i)); });
+          if (R.k === 'color') rebakeDrill(); if (R.k === 'look' && st === 'TITLE') drawBg();
+        });
+        seg.appendChild(b);
+      });
+      row.appendChild(lab); row.appendChild(seg); box.appendChild(row);
+    });
   }
+  var OWNR = [
+    { k: 'color', lab: ['ドリルの色', 'Drill colour'], opts: [['青緑', 'Teal'], ['赤', 'Red'], ['黒', 'Black'], ['金', 'Gold']] },
+    { k: 'motor', lab: ['モーター', 'Motor'], opts: [['ふつう', 'Stock'], ['太い', 'Beefy'], ['うなる', 'Growl'], ['唸る王', 'Roar']] },
+    { k: 'look', lab: ['店の見た目', 'Shop look'], opts: [['なし', 'Plain'], ['のれん', 'Noren'], ['提灯', 'Lanterns']] }
+  ];
   function capText(R, cap) { var c = R.cap.all || R.cap[SET[R.k]]; cap.textContent = c ? T(c[0], c[1]) : ''; }
   function pick(R, v, seg, cap) {
     audioOn(); haptic('ui');
